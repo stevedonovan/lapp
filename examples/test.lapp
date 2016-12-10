@@ -1,6 +1,5 @@
-Testing Lapp
-  -v, --verbose verbose flag
-  -k   arb flag
-  -o, --output (string)
-  -p   (integer...)
-  <out> (string...)
+Prints out first n lines of a file
+  -n, --lines (default 10) number of lines
+  -v, --verbose
+  <file> (string) input file name	
+  

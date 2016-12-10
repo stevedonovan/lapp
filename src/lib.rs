@@ -3,22 +3,57 @@
 //!
 //! # Example
 //! ```
-//! let args = lapp::Args::new("
+//! extern crate lapp;
+//!
+//! let args = lapp::parse_args("
 //!    A test program
 //!    -v,--verbose  verbose output
+//!    -k         (default 10)
 //!    -s, --save (default 'out.txt')	
+//!    <out>      (default 'stdout')
 //! ");
 //! assert_eq!(args.get_bool("verbose"),false);
-//! assert_eq!(args.get_string("save"),"out.txt".to_string());
+//! assert_eq!(args.get_integer("k"),10);
+//! assert_eq!(args.get_string("save"),"out.txt");
+//! assert_eq!(args.get_string("out"),"stdout");
 //! ```
+//!
+//! The usage text or _specification_ follows these simple rules:
+//! line begining with one of '-short, --long', '--long' or '-short' (flags)
+//! or begining with <name> (positional arguments).
+//! These may be followed by a type/default specifier (<type>) - otherwise considered a bool flag
+//! with default `false`. This specifier can be a type (like '(integer)') or a default,
+//! like '(default 10)`. If there's a default, the type is infered from the value - can always
+//! use single quotes to insist that the flag value is a string. Otherwise this flag is
+//! _required_ and must be present! 
+//! 
+//! The currently supported types are 'string','integer','bool' and 'float'. There are 
+//! corresponding access methods like `get_string("flag")` and so forth.
+//!
+//! The flag may be followed by '...' (e.g '-I... (<type>)') and it is then a _multiple_
+//! flag; its value will be a vector. This vector may be empty (flag is not required). 
+//! If the '...' appears inside the type specifier (e.g. '-p (integer...)') then
+//! the flag is expecting several space-separated values (like -p '10 20 30'); it is also
+//! represented by a vector.
+//!
+//! Rest of line (or any other kind of line) is ignored.
+//!
+//! lapp scans command-line arguments using GNU-style short and long flags.
+//! Short flags may be combined, and may immediately followed by a value, e.g '-vk5'.
+//! As an extension, you can say '--flag=value' or '-f:value'.
 
-	
 
 extern crate scanlex;
-use scanlex::Scanner;
-use scanlex::Token;
+use scanlex::{Scanner,Token,ScanError};
 use std::process;
+use std::env;
+use std::io;
+use std::io::Write;
 use std::error::Error;
+
+fn error<T>(msg: String) -> Result<T,ScanError> {
+	Err(ScanError::new(&msg))
+}
 
 // the flag types
 #[derive(Debug)]
@@ -33,15 +68,14 @@ enum Type {
     Arr(Box<Type>)
 }
 
-
 impl Type {
-    fn from_name(s: &str) -> Result<Type,String> {
+    fn from_name(s: &str) -> Result<Type,ScanError> {
         match s {
         "string" => Ok(Type::Str),
         "integer" => Ok(Type::Int),
         "float" => Ok(Type::Float),
         "bool" => Ok(Type::Bool),        
-        _ => Err(format!("not a known type {}",s))
+        _ => error(format!("not a known type {}",s))
         }
     }
     
@@ -50,7 +84,7 @@ impl Type {
         match *self {Type::Arr(ref bt) => Some(&**bt), _ => None}
     }
     
-    fn box_type(self) -> Type {
+    fn create_empty_array(self) -> Type {
 		Type::Arr(Box::new(self))
 	}
     
@@ -64,6 +98,21 @@ impl Type {
          _ => "bad"
         }).to_string()
     }
+    
+    fn rust_name(&self, multiple: bool) -> String {
+		let mut res = match *self {
+			Type::Bool => "bool".to_string(),
+			Type::Float => "f32".to_string(),
+			Type::Int => "i32".to_string(),
+			Type::Str => "String".to_string(),
+			Type::Arr(ref t) => format!("Vec<{}>",t.rust_name(false)),
+			_ => "bad".to_string()
+		};
+		if multiple {
+			res = format!("Vec<{}>",res);
+		}
+		res		
+	}
 
 
     fn parse_string(&self, s: &str) -> Value {
@@ -135,6 +184,7 @@ impl Value {
         Value::Bool(_) => Type::Bool,
         Value::None => Type::None,
         Value::Error(_) => Type::Error,
+        // watch out here...
         Value::Arr(ref v) => (*v[0]).type_of()
         }
     }
@@ -143,7 +193,7 @@ impl Value {
         if let Value::Error(_) = *self {true} else {false}
     }
 
-    fn from_value (tok: &Token) -> Result<Value,String> {
+    fn from_value (tok: &Token) -> Result<Value,ScanError> {
         match *tok {
         Token::Str(ref s) => Ok(Value::Str(s.clone())),
         Token::Num(x) => if x.floor()==x {
@@ -153,7 +203,7 @@ impl Value {
             },
         Token::Iden(ref s) => Ok(Value::Str(s.clone())),
         Token::Char(ch) => Ok(Value::Str(ch.to_string())),
-        _ => Err(format!("bad default value {:?}",tok))
+        _ => error(format!("bad default value {:?}",tok))
         }
     }
     
@@ -176,12 +226,6 @@ struct Flag {
     pos: usize
 }
 
-macro_rules! dbg {
-    ($x:expr) => {
-        println!("{} = {:?}",concat!(file!(),':',line!(),' ',stringify!($x)),$x);
-    }
-}
-
 impl Flag {
     fn set_value_from_string(&mut self, arg: &str) {
         // might fail, but we have Value::Error...
@@ -195,7 +239,7 @@ impl Flag {
             return;
         }
 		
-       self.is_set = true;
+        self.is_set = true;
         if ! self.is_multiple {
             self.value = v;
         } else {
@@ -212,7 +256,8 @@ impl Flag {
         if ! self.is_set {
             if let Value::None = self.defval  {
 				if let Type::Arr(_) = self.vtype {						
-				} else {
+				} else
+				if ! self.is_multiple {
 					self.value = Value::Error(format!("required flag {}",self.long));
 				}
             } else {
@@ -221,14 +266,22 @@ impl Flag {
         }
     }
     
-    fn declaration(&self) {
+    fn rust_name(&self) -> String {
         // long name may need massaging to become a Rust variable name
         // The result must be snake_case to keep compiler happy!
-        let mut name = self.long.replace('-',"_").to_lowercase();
+        let mut name = self.long.replace('-',"_").to_lowercase().to_string();
         let firstc = name.chars().nth(0).unwrap();
         if firstc.is_digit(10) || firstc == '_' {
             name = format!("c_{}",name);
         }
+        name		
+	}
+	
+	fn rust_type(&self) -> String {
+		self.vtype.rust_name(self.is_multiple)
+	}
+	
+	fn getter_name(&self) -> String {
         let mut tname = self.vtype.short_name();
         // Is this an array flag? Two possibilities - the type is an array,
         // or our multiple flag is set.
@@ -238,11 +291,11 @@ impl Flag {
         } else 
         if self.is_multiple {
             tname.push('s');
-        }        
-        println!("    let {} = args.get_{}(\"{}\");",
-            name,tname,self.long);
-    }
+        }
+	    format!("args.get_{}(\"{}\")",tname,self.long)
+	}
     
+   
 }
 
 pub struct Args<'a> {
@@ -257,48 +310,81 @@ impl <'a> Args<'a> {
         Args{flags: Vec::new(), pos: 0, text: text}
     }
     
-    /// bail out of program with non-zero return code
+    /// bail out of program with non-zero return code.
+    /// May force this to panic instead with the
+    /// EASY_DONT_QUIT_PANIC environment variable.
     pub fn quit(&self, msg: &str) -> ! {
-        println!("error: {}",msg);
-        println!("usage: {}",self.text);
-        process::exit(1);
+		let path = env::current_exe().unwrap();
+		let exe = path.file_name().unwrap();
+		let text = format!("{:?} error: {}",exe,msg);
+		if env::var("EASY_DONT_QUIT_PANIC").is_ok() {
+			panic!(text);
+		} else {
+			writeln!(&mut io::stderr(),"{}",text).unwrap();
+			process::exit(1);
+		}
+	}
+    
+    /// create suggested variable or struct declarations for accessing the flags...
+    pub fn declarations(&mut self, struct_name: &str) -> String {
+        if let Err(e) = self.parse_spec() {
+			self.quit(e.description());
+		}
+		let mut res = String::new();
+		if struct_name.len() > 0 {
+			res += &format!("const USAGE: &'static str = \"\n{}\";\n",self.text);
+			res += &format!("#[derive(Debug)]\nstruct {} {{\n",struct_name);
+			for f in &self.flags {
+				res += &format!("\t{}: {},\n",f.rust_name(),f.rust_type());
+			}
+			res += &format!(
+				"}}\n\nimpl {} {{\n\tfn new() -> ({},lapp::Args<'static>) {{\n",
+				struct_name,struct_name);
+			res += &format!(
+				"\t\tlet args = lapp::parse_args(USAGE);\n\t\t({}{{\n",struct_name);
+			for f in &self.flags {
+				res += &format!("\t\t\t{}: {},\n",f.rust_name(),f.getter_name());
+			}
+			res += &format!("\t\t}},args)\n\t}}\n}}\n\n");
+		} else {
+			for f in &self.flags {
+				res += &format!("    let {} = {};\n",
+					f.rust_name(),f.getter_name());
+			}
+		}
+		res
     }
     
-    /// print out suggested variable declarations for accessing the flags...
-    pub fn declarations(&mut self) {
-        self.parse_spec();
-        for f in &self.flags {
-            f.declaration();
-        }
-    }
-    
-    pub fn dump(self) {
+    pub fn dump(&mut self) {
+		self.parse();
         for f in &self.flags {
             println!("flag '{}' value {:?}",f.long,f.value);
         }
     }
     
-    pub fn parse(&mut self) {
-        self.parse_spec();
-        if let Err(e) = self.parse_args() { self.quit(&e) }
+    fn parse(&mut self) {
+        if let Err(e) = self.parse_spec() { self.quit(e.description()); }
+        let v: Vec<String> = std::env::args().skip(1).collect();
+        if let Err(e) = self.parse_command_line(v) { self.quit(e.description()); }
     }
     
-    pub fn parse_spec(&mut self) {
+    fn parse_spec(&mut self) -> Result<(),ScanError> {
         for line in self.text.lines() {
             if let Err(e) = self.parse_spec_line(line) {
-                self.quit(&e);
+                return Err(e);
             }
         }
+        if let Err(_) = self.flags_by_long("help") {
+			self.parse_spec_line("   -h,--help this help").unwrap();
+		}
+        Ok(())
     }
+    
 
-    fn parse_spec_line(&mut self, line: &str) -> Result<(),String> {
+    fn parse_spec_line(&mut self, line: &str) -> Result<(),ScanError> {
         let mut scan = Scanner::new(line);
         if ! scan.skip_whitespace() { return Ok(()); } // empty!
         
-        // either (flags) -short, --long, --long or -short
-        // or (arguments) <name>
-        // maybe followed by a type specifier (...) (otherwise just a bool flag)
-        // Rest of line is just bumpf.
         let mut ch = scan.nextch();
         let mut long = String::new();
         let mut short = '\0';        
@@ -309,10 +395,10 @@ impl <'a> Args<'a> {
                 short = scan.nextch();
                 ch = scan.nextch();
                 if ! short.is_alphanumeric() {
-                    return Err(format!("{:?} isn't short: only letters or digits allowed",short));
+                    return error(format!("{:?} isn't short: only letters or digits allowed",short));
                 }
                 if ch != ',' && ch != ' ' {
-                    return Err(format!("{:?} isn't short: not followed by comma or space",short));
+                    return error(format!("{:?} isn't short: not followed by comma or space",short));
                 }
                 if ch == ',' { // expecting long flag!
                     if scan.peek() == ' ' {
@@ -320,7 +406,7 @@ impl <'a> Args<'a> {
                     }
                     ch = scan.nextch();
                     if ch != '-' {
-                        return Err(format!("expected long flag after short flag {:?}",short));
+                        return error(format!("expected long flag after short flag {:?}",short));
                     }
                 }
             }
@@ -333,7 +419,8 @@ impl <'a> Args<'a> {
                 long = short.to_string();
             }
             // flag followed by '...' means that the flag may
-            // occur multiple times, with the results stored in a vector
+            // occur multiple times, with the results stored in a vector.
+            // For instance '-I. -Ilib'
             is_multiple = scan.peek() == '.';
             if is_multiple {
                 scan.skip_until(|c| c != '.');
@@ -369,12 +456,13 @@ impl <'a> Args<'a> {
             // by a vector (e.g. --ports '8080 8081 8082').
             // UNLESS it is a positional argument,
             // where it is considered multiple!
-            if scan.peek() == '.' {
-                flag_type = flag_type.box_type();
+            if scan.peek() == '.' {                
                 default_val = Value::empty_array();
                 if is_positional {
 					is_multiple = true;
-				}
+				} else { // i.e the flag type is an array of a basic scalar type
+                    flag_type = flag_type.create_empty_array();
+                }
             }
 			if is_multiple {
 				flag_value = Value::empty_array();
@@ -383,8 +471,9 @@ impl <'a> Args<'a> {
             default_val = Value::Bool(false);
         }
         
+        // it is an error to specify a flag twice...
         if self.flags_by_long_ref(&long).is_ok() {
-            return Err(format!("flag {} already defined",long));
+            return error(format!("flag {} already defined",long));
         }
         
         let flag = Flag{long: long, short: short,
@@ -398,61 +487,66 @@ impl <'a> Args<'a> {
         
     }
     
-    fn flags_by_long(&mut self, s: &str) -> Result<&mut Flag,String> {
+    fn flags_by_long(&mut self, s: &str) -> Result<&mut Flag,ScanError> {
         self.flags.iter_mut()
             .filter(|&ref f| f.long == s)
-            .next().ok_or(format!("no long flag '{}'",s))       
+            .next().ok_or(ScanError::new(&format!("no long flag '{}'",s)))       
     }
     
-    fn flags_by_long_ref(&self, s: &str) -> Result<&Flag,String> {
+    fn flags_by_long_ref(&self, s: &str) -> Result<&Flag,ScanError> {
         self.flags.iter()
             .filter(|&f| f.long == s)
-            .next().ok_or(format!("no long flag '{}'",s))
+            .next().ok_or(ScanError::new(&format!("no long flag '{}'",s)))
     }    
     
-    fn flags_by_short(&mut self, ch: char) -> Result<&mut Flag,String> {
+    fn flags_by_short(&mut self, ch: char) -> Result<&mut Flag,ScanError> {
         self.flags.iter_mut()
             .filter(|&ref f| f.short == ch)
-            .next().ok_or(format!("no short flag '{}'",ch))
+            .next().ok_or(ScanError::new(&format!("no short flag '{}'",ch)))
     }
     
-    fn flags_by_pos(&mut self, pos: usize) -> Result<&mut Flag,String> {
+    fn flags_by_pos(&mut self, pos: usize) -> Result<&mut Flag,ScanError> {
         self.flags.iter_mut()
             .filter(|&ref f| f.pos == pos)
-            .next().ok_or(format!("no positional arg '{}'",pos))
+            .next().ok_or(ScanError::new(&format!("no positional arg '{}'",pos)))
     }
     
-    fn parse_args(&mut self) -> Result<(),String> {
-        let mut iter = std::env::args().skip(1);
+    fn parse_command_line(&mut self, v: Vec<String>) -> Result<(),ScanError> {
+        let mut iter = v.into_iter();
         
-        fn nextarg(name: &str, ms: Option<String>) -> Result<String,String> {
-            if  ms.is_none() {return Err(format!("no value for flag '{}'",name));}
-            let res = ms.unwrap();
-            if res.starts_with('-') {return Err(format!("flag '{}' is expecting value",name));}
-            Ok(res)
+        fn nextarg(name: &str, ms: Option<String>) -> Result<String,ScanError> {
+            if  ms.is_none() {return error(format!("no value for flag '{}'",name));}
+            Ok(ms.unwrap())
         };
         
-        while let Some(s) = iter.next() {
-            let mut k = 0;
+        let mut parsing = true;
+        let mut k = 1;
+        while let Some(s) = iter.next() {            
             let mut scan = Scanner::new(&s);
             let mut ch = scan.nextch();
-            if ch == '-' {
+            if ch == '-' && parsing {
                 if scan.peek() == '-' { // long flag
                     scan.nextch();
-                    // flag may immediately followed by its value, with optional = or :                    
-                    let long = scan.take_until(&['=',':']);
-                    scan.nextch();
-                    let mut rest = scan.take_rest();
-                    let mut flag = try!(self.flags_by_long(&long));
-                    if flag.vtype != Type::Bool {                        
-                        if rest == "" {  // otherwise try grab the next arg
-                            rest = try!(nextarg(&long,iter.next()));
+                    if scan.peek() != '\0' {
+                        // flag may immediately followed by its value, with optional = or :                    
+                        let long = scan.take_until(&['=',':']);
+                        scan.nextch();
+                        let mut rest = scan.take_rest();
+                        let mut flag = try!(self.flags_by_long(&long));
+                        if flag.vtype != Type::Bool {                        
+                            if rest == "" {  // otherwise try grab the next arg
+                                rest = try!(nextarg(&long,iter.next()));
+                            }
+                            flag.set_value_from_string(&rest);
+                        } else {
+                            flag.set_value(Value::Bool(true));
                         }
-                        flag.set_value_from_string(&rest);
+                    } else { // just '--' switches off argument parsing
+                        parsing = false;
                     }
                 } else {
                     loop {
-                        // similar, except there can be multiple short flags
+                        // similar; there can be multiple short flags
                         // although only the last one can take a value
                         ch = scan.nextch();
                         if ch == '\0' { break; }
@@ -470,21 +564,27 @@ impl <'a> Args<'a> {
 						}
                     }
                 }                
-            } else { // positional argument
-                k += 1;
+            } else { // positional argument                
                 let mut flag = try!(self.flags_by_pos(k));
+                if ! flag.is_multiple {
+                    k += 1;
+                }
                 flag.set_value_from_string(&s);
             }
         }
-        self.check_flags();
-        Ok(())
-    }
-    
-  
-    fn check_flags(&mut self) {
+        
+		if self.get_flag_value("help").as_bool().is_some() {
+			println!("{}",self.text);
+			process::exit(0);
+		}	
+        
+        
+        // fill in defaults. If a default isn't available it's
+        // a required flag. If not specified the flag value is set to an error
         for flag in &mut self.flags {
             flag.check();            
-        }        
+        }          
+        Ok(())
     }
     
     fn get_flag_value (&self, name: &str) -> &Value {
@@ -500,28 +600,31 @@ impl <'a> Args<'a> {
     
     fn bad_flag (&self, name: &str, tname: &str) -> ! {
         self.quit(&format!("flag '{}' is not a {}",name,tname))
-    }
+    }    
     
+    /// get flag as a string, quitting otherwise.
     pub fn get_string(&self, name: &str) -> String {
         let s = self.get_flag_value(name).as_string();
         if s.is_some() {s.unwrap()} else {self.bad_flag(name,"string")}
     }
     
-    pub fn get_int(&self, name: &str) -> i32 {
+    /// get flag as an integer, quitting otherwise.
+    pub fn get_integer(&self, name: &str) -> i32 {
         let s = self.get_flag_value(name).as_int();
         if s.is_some() {s.unwrap()} else {self.bad_flag(name,"integer")}
     }
     
+    /// get flag as a float, quitting otherwise.
     pub fn get_float(&self, name: &str) -> f32 {
         let s = self.get_flag_value(name).as_float();
         if s.is_some() {s.unwrap()} else {self.bad_flag(name,"float")}
     }
     
+    /// get flag as a bool, quitting otherwise.
     pub fn get_bool(&self, name: &str) -> bool {
         let s = self.get_flag_value(name).as_bool();
         if s.is_some() {s.unwrap()} else {self.bad_flag(name,"bool")}
-    }
-    
+    }    
    
     fn get_boxed_array(&self, name: &str, kind: &str) -> &Vec<Box<Value>> {
         match self.get_flag_value(name).as_array() {
@@ -549,18 +652,132 @@ impl <'a> Args<'a> {
         res
     }
     
-    pub fn get_strings(self, name: &str) -> Vec<String> {
+    /// get multiple flag as an array of strings, quitting otherwise.
+    pub fn get_strings(&self, name: &str) -> Vec<String> {
 		self.get_array(name,"string",|b| b.as_string())
 	}
     
-    pub fn get_ints(self, name: &str) -> Vec<i32> {
+    /// get multiple flag as an array of integers, quitting otherwise.
+    pub fn get_integers(&self, name: &str) -> Vec<i32> {
 		self.get_array(name,"integer",|b| b.as_int())
 	}
 	
-    pub fn get_floats(self, name: &str) -> Vec<f32> {
+    /// get multiple flag as an array of floats, quitting otherwise.
+    pub fn get_floats(&self, name: &str) -> Vec<f32> {
 		self.get_array(name,"float",|b| b.as_float())
 	}
-	
     
 }
 
+/// parse the command-line specification and use it
+/// to parse the program's command line args.
+/// As before, quits on any error.
+pub fn parse_args(s: &str) -> Args {
+    let mut res = Args::new(s);
+    res.parse();
+    res
+}
+
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	
+	const SIMPLE: &'static str = "
+Testing Lapp
+  -v, --verbose verbose flag
+  -k   arb flag
+  -o, --output (default stdout)
+  -p   (integer...)
+  -I, --include... (string)
+  <in> (string)
+  <out> (string...)
+";
+	
+	fn arg_strings(a: &[&str]) -> Vec<String> {
+		a.iter().map(|s| s.to_string()).collect()
+	}
+	
+	fn empty_strings() -> Vec<String> {
+		Vec::new()
+	}
+	
+	struct SimpleTest {
+		verbose: bool,
+		k: bool,
+		output: String,
+		p: Vec<i32>,
+		include: Vec<String>,		
+		out: Vec<String>
+	}
+	
+	impl SimpleTest {
+		fn new(test_args: &[&str]) -> SimpleTest {
+			let mut args = Args::new(SIMPLE);
+			args.parse_spec().expect("spec failed");
+			args.parse_command_line(arg_strings(test_args)).expect("scan failed");
+			SimpleTest {
+				verbose: args.get_bool("verbose"),
+				k: args.get_bool("k"),
+				output: args.get_string("output"),
+				p: args.get_integers("p"),
+				include: args.get_strings("include"),
+				out: args.get_strings("out")
+			}
+		}		
+	}
+
+	#[test]
+	fn test_simple_just_out() {
+		let res = SimpleTest::new(&["boo","hello"]);
+		assert_eq!(res.verbose,false);
+		assert_eq!(res.k,false);
+		assert_eq!(res.output,"stdout");
+		assert_eq!(res.p,&[]);
+		assert_eq!(res.out,&["hello"]);
+	}
+
+	#[test]
+	fn test_simple_bool_flags() {
+		let res = SimpleTest::new(&["boo","-vk","hello"]);
+		assert_eq!(res.verbose,true);
+		assert_eq!(res.k,true);
+		assert_eq!(res.output,"stdout");
+		assert_eq!(res.p,&[]);
+		assert_eq!(res.out,&["hello"]);
+	}
+	
+	#[test]
+	fn test_simple_array_flag() {
+		let res = SimpleTest::new(&["boo","-p","10 20 30","hello"]);
+		assert_eq!(res.verbose,false);
+		assert_eq!(res.k,false);
+		assert_eq!(res.output,"stdout");
+		assert_eq!(res.p,&[10,20,30]);
+		assert_eq!(res.out,&["hello"]);
+	}
+
+	#[test]
+	fn test_simple_multiple_positional_args() {
+		let res = SimpleTest::new(&["boo","hello","baggins","--","--frodo"]);
+		assert_eq!(res.verbose,false);
+		assert_eq!(res.k,false);
+		assert_eq!(res.output,"stdout");
+		assert_eq!(res.p,&[]);
+		assert_eq!(res.include,empty_strings());
+		assert_eq!(res.out,&["hello","baggins","--frodo"]);
+	}
+	
+	#[test]
+	fn test_simple_multiple_flags() {
+		let res = SimpleTest::new(&["boo","-I.","-I..","--include","lib","hello"]);
+		assert_eq!(res.verbose,false);
+		assert_eq!(res.k,false);
+		assert_eq!(res.output,"stdout");
+		assert_eq!(res.p,&[]);
+		assert_eq!(res.include,&[".","..","lib"]);
+		assert_eq!(res.out,&["hello"]);
+	}
+	
+
+}
