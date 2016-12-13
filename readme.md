@@ -48,7 +48,8 @@ text anyway:
   
   - the usage 'mini-language' is fairly simple
   - command-line arguments are processed GNU-style. You may say `--lines 20`
-    or `-n 20`; short flags can be combined `-vn20`.
+    or `-n 20`; short flags can be combined `-vn20`. `--` indicates end of
+    command-line processing
   - not providing positional arguments or required flags is an error
   - the `lines` flag value must be a valid integer and will be converted
   
@@ -59,7 +60,8 @@ self-documenting enough for the user.
 
 A significant line in a Lapp specification starts either with '-' (flags) or
 '<' (positional arguments).  Flags may be '-s, --long','--long' or '-s'. Any other
-lines are ignored.
+lines are ignored.  Short flags may only be letters or numbers; long flags are
+alphanumeric, plus '_' and '-'.
 
 These significant lines may be followed by a type-default specifier in parens. It
 is either a type, like '(string)' or a default value, like '(default 10)'. If not
@@ -85,6 +87,8 @@ of one of the base types, but are used differently. For example,
   ./exe --ports '9000 9100 9200'
   ./exe one two three
 ```
+
+Array flags are lists separated _either_ with spaces _or_ with commas.
   
 Multiple flags have '...' after the flag, array flags have '...' after the type. 
 The exception is positional flags, which are always multiple. This syntax does 
@@ -93,7 +97,7 @@ vector.
 
 ## Codegen
 
-A criticism of this implementation is that it isn't very strongly typed; it is
+A criticism of this approach is that it isn't very strongly typed; it is
 up to the programmer to use the correct `get_<type>` accessor for the flag, and
 spelling mistakes are fatal at run-time. To get the boilerplate correct, there
 is a tool in the 'src/bin' folder called `lapp-gen`.  In the examples folder 
@@ -147,6 +151,9 @@ flag 'file' value Str("hello")
 flag 'help' value Bool(false)
 
 ```
+
+The `mony.lapp` test file in `examples` gives all the permutations possible
+with this version of Lapp.
 
 The real labour saving codegen option is to generate a struct which is initialized
 from lapp command-lines:
