@@ -198,10 +198,10 @@ impl Value {
         if let Value::Error(_) = *self {true} else {false}
     }
 
-    fn from_value (tok: &Token) -> Result<Value,ScanError> {
+    fn from_value (tok: &Token, was_integer: bool) -> Result<Value,ScanError> {
         match *tok {
         Token::Str(ref s) => Ok(Value::Str(s.clone())),
-        Token::Num(x) => if x.floor()==x {
+        Token::Num(x) => if was_integer {
                 Ok(Value::Int(x as i32))
             } else {
                 Ok(Value::Float(x as f32))
@@ -453,7 +453,7 @@ impl <'a> Args<'a> {
             let atype = try!(scan.get_iden());
             if atype == "default" { // followed by the default value
                 let next = scan.get();
-                default_val = try!(Value::from_value(&next));
+                default_val = try!(Value::from_value(&next,scan.was_integer));
                 // with type deduced from the default
                 flag_type = default_val.type_of();
             } else {
