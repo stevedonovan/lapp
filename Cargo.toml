@@ -4,5 +4,7 @@ version = "0.1.0"
 authors = ["steve donovan <steve.j.donovan@gmail.com>"]
 
 [dependencies]
-scanlex = { path = "../scanlex" }
+# scanlex = { path = "../scanlex" }
+scanlex = { git = "https://github.com/stevedonovan/scanlex.git" }
+
 
