@@ -129,8 +129,13 @@ impl Type {
             Err(e) => Value::Error(format!("can't convert '{}' to float - {}",s,e.description()))
             },
         Type::Arr(ref bt) => {
+			let parts: Vec<_> = if s.find(',').is_some() {
+				s.split(',').collect()
+			} else {
+				s.split_whitespace().collect()
+			};
             let mut res = Vec::new();
-            for part in s.split_whitespace() {
+            for part in parts {
                 let v = (*bt).parse_string(part);
                 if v.is_err() { return v; }
                 res.push(Box::new(v));
