@@ -400,10 +400,10 @@ impl <'a> Args<'a> {
                 short = scan.nextch();
                 ch = scan.nextch();
                 if ! short.is_alphanumeric() {
-                    return error(format!("{:?} isn't short: only letters or digits allowed",short));
+                    return error(format!("{:?} isn't allowed: only letters or digits in short flags",short));
                 }
                 if ch != ',' && ch != ' ' {
-                    return error(format!("{:?} isn't short: not followed by comma or space",short));
+                    return error(format!("{:?} isn't allowed: short flag not followed by comma or space",short));
                 }
                 if ch == ',' { // expecting long flag!
                     if scan.peek() == ' ' {
@@ -418,7 +418,9 @@ impl <'a> Args<'a> {
             if ch == '-' { // long flag nane
                 scan.nextch(); // skip -
                 long = scan.grab_while(|c| c.is_alphanumeric() || c == '-' || c == '_');
-                
+                if scan.peek() != '.' && scan.peek() != ' ' {
+					return error(format!("{:?} isn't allowed: long flag chars are alphanumeric, '_' or '-'",scan.peek()));
+				}
             }
             if long == "" { 
                 long = short.to_string();
