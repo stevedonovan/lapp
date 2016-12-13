@@ -1,0 +1,17 @@
+This is the Full Monty, all Lapp possibilities
+in one spec file
+
+  -v, --verbose  short and long bool flag, default false
+  --extra-stuff   just a long bool flag, ditto
+  -S              just a short bool flag
+  -n, --lines  (default 10)  short and log integer flag, explicit default
+  -p, --ports  (integer...) array of integer flag (e.g. --ports '1002 1003')
+  -s, --scale  (default 1.0)  float flag, explicit default
+  -m           (float)    _required_ float flag (because no default)
+  --libdir     (default '.')  string flag - use quotes for correct type!
+  -I, --include... (string) multiple string flags (like -I. -Ilib)
+  
+Other lines are ignored:
+  
+  <args>      (string...) rest of args as an array of strings
+  
