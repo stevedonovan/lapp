@@ -3,8 +3,18 @@ name = "lapp"
 version = "0.1.0"
 authors = ["steve donovan <steve.j.donovan@gmail.com>"]
 
+description = "simple command-line argument parser driven by usage text"
+
+documentation = "https://docs.rs/lapp/0.1.0/lapp/"
+repository = "https://github.com/stevedonovan/lapp.git"
+
+readme = "readme.md"
+
+license="MIT"
+
+keywords = ["command","command-line","parser","arguments"]
+
 [dependencies]
-# scanlex = { path = "../scanlex" }
-scanlex = { git = "https://github.com/stevedonovan/scanlex.git" }
+scanlex = "*"
 
 
