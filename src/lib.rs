@@ -497,7 +497,7 @@ impl <'a> Args<'a> {
             self.parse_spec_line(line)?;
         }
         if let Err(_) = self.flags_by_long("help") {
-//            self.parse_spec_line("   -h,--help this help").unwrap();
+            self.parse_spec_line("   -h,--help this help").unwrap();
         }
         Ok(())
     }
@@ -530,14 +530,14 @@ impl <'a> Args<'a> {
                 }
             }
             if long_flag {
-                let idx = slice.find(|c: char| ! (c.is_alphabetic() || c == '_' || c == '-')).unwrap();
+                let idx = slice.find(|c: char| ! (c.is_alphanumeric() || c == '_' || c == '-'))
+                    .unwrap_or(slice.len());
                 let parts = slice.split_at(idx);
                 flag.long = parts.0.to_string();
                 slice = parts.1;
-                if parts.1.starts_with(",") {
-                    slice = &slice[1..];
+                if slice.len() > 0 && ! (slice.starts_with(" ") || slice.starts_with("."))  {
+                    return error(format!("long flags can only contain letters, numbers, '_' or '-'"));
                 }
-                // TBD: enforce char rules for long names
             } else
             if starts_with(&mut slice, "<") { // positional argument
                 flag.long = grab_upto(&mut slice, ">")?;
@@ -654,18 +654,19 @@ impl <'a> Args<'a> {
         // flags _may_ have the value after a = or : delimiter
         fn extract_flag_value(s: &mut &str) -> String {
             if let Some(idx) = s.find(|c: char| c == '=' || c == ':') {
+               let rest = (&s[idx+1..]).to_string();
                *s = &s[0..idx];
-               &s[idx+1..]
+               rest               
             } else {
-               ""
-           }.to_string()
+               "".to_string()
+           }
         }
 
         let mut parsing = true;
         let mut k = 1;
         while let Some(arg) = iter.next() {
             let mut s = arg.as_str();
-             if parsing && starts_with(&mut s, "--") { // short flag
+             if parsing && starts_with(&mut s, "--") { // long flag
                 if s.len() == 0 { // plain '--' means 'stop arg processing'
                     parsing = false;
                 } else {
@@ -685,12 +686,10 @@ impl <'a> Args<'a> {
                 // there can be multiple short flags
                 // although only the last one can take a value
                 let mut chars = s.chars();
-                let mut idx = 0;
-                for ch in chars.by_ref() {
+                while let Some(ch) = chars.next() {
                     let mut flag = self.flags_by_short(ch)?;
                     if flag.vtype != Type::Bool {
-                        let s = s.clone();
-                        let mut rest = (&s[idx+1..]).to_string();
+                        let mut rest: String = chars.collect();
                         if rest == "" {
                             rest = nextarg(&flag.long,iter.next())?;
                         }
@@ -699,7 +698,6 @@ impl <'a> Args<'a> {
                     } else {
                        flag.set_value(Value::Bool(true))?;
                     }
-                    idx += 1;
                 }
             } else {  // positional argument
                 let mut flag = self.flags_by_pos(k)?;
@@ -713,11 +711,12 @@ impl <'a> Args<'a> {
         }
 
 
-        if self.flags_by_long_ref("help").is_ok() {
-            println!("{}",self.text);
-            process::exit(0);
+        if let Ok(ref flag) = self.flags_by_long_ref("help") {
+            if flag.is_set {
+                println!("{}",self.text);
+                process::exit(0);
+            }
         }
-
 
         // fill in defaults. If a default isn't available it's
         // a required flag. If not specified the flag value is set to an error

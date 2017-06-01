@@ -1,7 +1,7 @@
 use super::LappError;
 
 pub fn skipws(slice: &str) -> &str {
-    let nxt = slice.find(|c: char| ! c.is_whitespace()).unwrap();
+    let nxt = slice.find(|c: char| ! c.is_whitespace()).unwrap_or(slice.len());
     &slice[nxt..]
 }
 
