@@ -94,7 +94,7 @@ impl Flag {
                 if let Type::Arr(_) = self.vtype {
                 } else
                 if ! self.is_multiple {
-                    return error(format!("required flag {}",self.long));
+                    //~ return error(format!("required flag {}",self.long));
                 }
             } else {
                 self.value = self.defval.clone();

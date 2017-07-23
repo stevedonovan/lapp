@@ -239,5 +239,12 @@ impl Value {
         Value::Arr(empty)
     }
 
+    pub fn is_none(&self) -> bool {
+        match *self {
+            Value::None => true,
+            _ => false
+        }
+    }
+
 }
 

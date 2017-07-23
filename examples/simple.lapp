@@ -1,0 +1,8 @@
+Testing Lapp
+  -v, --verbose verbose flag
+  -k   arb flag
+  -o, --output (default stdout)
+  -p   (integer...)
+  -I, --include... (string)
+  <in> (string)
+  <out> (string...)

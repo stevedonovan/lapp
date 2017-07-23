@@ -289,7 +289,7 @@ impl <'a> Args<'a> {
             if let Some(idx) = s.find(|c: char| c == '=' || c == ':') {
                let rest = (&s[idx+1..]).to_string();
                *s = &s[0..idx];
-               rest               
+               rest
             } else {
                "".to_string()
            }
@@ -361,9 +361,13 @@ impl <'a> Args<'a> {
 
     fn get_flag_value (&self, name: &str) -> &Value {
         if let Ok(ref flag) = self.flags_by_long_ref(name) {
-           &flag.value
+           if flag.value.is_none() {
+                self.bad_flag(name,"not found")
+            } else {
+                &flag.value
+            }
         } else {
-            self.quit(&format!("unknown flag '{}'",name))
+            self.bad_flag(name,"unknown")
         }
     }
 
