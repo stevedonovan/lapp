@@ -359,15 +359,50 @@ impl <'a> Args<'a> {
         Ok(())
     }
 
-    fn get_flag_value (&self, name: &str) -> &Value {
+    fn maybe_flag_value (&self, name: &str) -> Option<&Value> {
         if let Ok(ref flag) = self.flags_by_long_ref(name) {
            if flag.value.is_none() {
-                self.bad_flag(name,"not found")
+                None
             } else {
-                &flag.value
+                Some(&flag.value)
             }
         } else {
             self.bad_flag(name,"unknown")
+        }
+    }
+
+    fn maybe_flag<T, F: Fn(&Value) -> Result<T>> (&self, name: &str, extract: F) -> Option<T> {
+        if let Some(value) = self.maybe_flag_value(name) {
+            match extract(value) {
+                Ok(v) => Some(v),
+                Err(e) => self.bad_flag(name,e.description())
+            }
+        } else {
+            None
+        }
+    }
+
+    /// get flag as a string
+    pub fn maybe_string(&self, name: &str) -> Option<String> {
+        self.maybe_flag(name,|v| v.as_string())
+    }
+
+    /// get flag as an integer
+    pub fn maybe_integer(&self, name: &str) -> Option<i32> {
+        self.maybe_flag(name,|v| v.as_int())
+    }
+
+    /// get flag as a float
+    pub fn maybe_float(&self, name: &str) -> Option<f32> {
+        self.maybe_flag(name,|v| v.as_float())
+    }
+
+
+    fn get_flag_value (&self, name: &str) -> &Value {
+        if let Some(val_ref) = self.maybe_flag_value(name) {
+            val_ref
+        } else {
+            self.bad_flag(name,"not found")
         }
     }
 
