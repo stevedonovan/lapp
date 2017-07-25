@@ -73,7 +73,7 @@ impl <'a> Args<'a> {
     pub fn quit(&self, msg: &str) -> ! {
         let path = env::current_exe().unwrap();
         let exe = path.file_name().unwrap();
-        let text = format!("{:?} error: {}",exe,msg);
+        let text = format!("{} error: {}",exe.to_string_lossy(),msg);
         if env::var("RUST_BACKTRACE").is_ok() {
             panic!(text);
         } else {
