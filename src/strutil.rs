@@ -42,3 +42,24 @@ pub fn split_with<'a>(slice: &'a str, needle: &str) -> Option<(&'a str,&'a str)>
         None
     }
 }
+
+pub fn dedent(s: &str) -> String {
+    let mut lines = s.lines();
+    let mut res = String::new();
+    let mut idx = None;
+    while let Some(line) = lines.next() {
+        if let Some(pos) = line.chars().position(|c| ! c.is_whitespace()) {
+            idx = Some(pos);
+            res += &line[pos..];
+            res.push('\n');
+            break;
+        }
+    }
+    if let Some(pos) = idx {
+        while let Some(line) = lines.next() {
+            res += &line[pos..];
+            res.push('\n');
+        }
+    }
+    res
+}

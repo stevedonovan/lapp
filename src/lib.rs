@@ -347,10 +347,7 @@ impl <'a> Args<'a> {
         // display usage if help is requested
         if let Ok(ref flag) = self.flags_by_long_ref("help") {
             if flag.is_set {
-                let mut text = self.text;
-                if text.starts_with("\n") {
-                    text = &text[1..];
-                }
+                let text = strutil::dedent(self.text);
                 println!("{}",text);
                 process::exit(0);
             }
