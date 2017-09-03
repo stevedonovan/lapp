@@ -2,7 +2,9 @@ Testing Lapp
   -v, --verbose verbose flag
   -k   arb flag
   -o, --output (default stdout)
-  -p   (integer...)
+  -p   (default 42)
+  --ports (integer...)
+  -f  (default 'none')
   -I, --include... (string)
   <in> (string)
   <out> (string...)

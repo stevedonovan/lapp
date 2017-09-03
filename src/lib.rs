@@ -72,8 +72,8 @@ impl <'a> Args<'a> {
     /// EASY_DONT_QUIT_PANIC environment variable.
     pub fn quit(&self, msg: &str) -> ! {
         let path = env::current_exe().unwrap();
-        let exe = path.file_name().unwrap();
-        let text = format!("{} error: {}",exe.to_string_lossy(),msg);
+        let exe = path.file_name().unwrap().to_string_lossy();
+        let text = format!("{} error: {}\nType {} --help for more information",exe,msg,exe);
         if env::var("RUST_BACKTRACE").is_ok() {
             panic!(text);
         } else {
@@ -201,14 +201,14 @@ impl <'a> Args<'a> {
                     // default VALUE or TYPE
                     let parts: Vec<_> = rest.split_whitespace().collect();
                     if parts.len() == 0 {
-                        return error(format!("nothing inside type specifier"));
+                        return error(format!("nothing inside type specifier for flag '{}'",flag.long));
                     }
                     if parts.len() == 2 {
                         if parts[0] == "default" {
                             flag.defval = Value::from_value(parts[1])?;
                             flag.vtype = flag.defval.type_of();
                         } else {
-                            return error(format!("expecting (default <value>)"));
+                            return error(format!("expecting (default <value>) for flag '{}'",flag.long));
                         }
                     } else {
                         flag.vtype = Type::from_name(parts[0])?;
@@ -361,61 +361,65 @@ impl <'a> Args<'a> {
         Ok(())
     }
 
-    fn maybe_flag_value (&self, name: &str) -> Option<&Value> {
+    fn result_flag_value (&self, name: &str) -> Result<&Value> {
         if let Ok(ref flag) = self.flags_by_long_ref(name) {
            if flag.value.is_none() {
-                None
+                self.bad_flag(name,"required")
             } else {
-                Some(&flag.value)
+                Ok(&flag.value)
             }
         } else {
             self.bad_flag(name,"unknown")
         }
     }
 
-    fn maybe_flag<T, F: Fn(&Value) -> Result<T>> (&self, name: &str, extract: F) -> Option<T> {
-        if let Some(value) = self.maybe_flag_value(name) {
-            match extract(value) {
-                Ok(v) => Some(v),
-                Err(e) => self.bad_flag(name,e.description())
-            }
-        } else {
-            None
+    fn result_flag<T, F: Fn(&Value) -> Result<T>> (&self, name: &str, extract: F) -> Result<T> {
+        match self.result_flag_value(name) {
+            Ok(value) => {
+                match extract(value) {
+                    Ok(v) => Ok(v),
+                    Err(e) => self.bad_flag(name,e.description())
+                }
+            },
+            Err(e) => Err(e)
         }
     }
 
     /// get flag as a string
-    pub fn maybe_string(&self, name: &str) -> Option<String> {
-        self.maybe_flag(name,|v| v.as_string())
+    pub fn get_string_result(&self, name: &str) -> Result<String> {
+        self.result_flag(name,|v| v.as_string())
     }
 
     /// get flag as an integer
-    pub fn maybe_integer(&self, name: &str) -> Option<i32> {
-        self.maybe_flag(name,|v| v.as_int())
+    pub fn get_integer_result(&self, name: &str) -> Result<i32> {
+        self.result_flag(name,|v| v.as_int())
     }
 
     /// get flag as a float
-    pub fn maybe_float(&self, name: &str) -> Option<f32> {
-        self.maybe_flag(name,|v| v.as_float())
+    pub fn get_float_result(&self, name: &str) -> Result<f32> {
+        self.result_flag(name,|v| v.as_float())
     }
 
 
     fn get_flag_value (&self, name: &str) -> &Value {
-        if let Some(val_ref) = self.maybe_flag_value(name) {
-            val_ref
-        } else {
-            self.bad_flag(name,"not found")
+        match self.result_flag_value(name) {
+            Ok(val_ref) => val_ref,
+            Err(e) => self.quit(e.description())
         }
     }
 
-    fn bad_flag (&self, tname: &str, msg: &str) -> ! {
-        self.quit(&format!("flag '{}': {}",tname,msg))
+    fn error_msg(&self, tname: &str, msg: &str) -> String {
+        format!("flag '{}': {}",tname,msg)
+    }
+
+    fn bad_flag <T>(&self, tname: &str, msg: &str) -> Result<T> {
+        error(&self.error_msg(tname,msg))
     }
 
     fn get_flag<T, F: Fn(&Value) -> Result<T>> (&self, name: &str, extract: F) -> T {
         match extract(self.get_flag_value(name)) {
             Ok(v) => v,
-            Err(e) => self.bad_flag(name,e.description())
+            Err(e) => self.quit(&self.error_msg(name,e.description()))
         }
     }
 
@@ -451,14 +455,18 @@ impl <'a> Args<'a> {
 
     fn get_boxed_array(&self, name: &str, kind: &str) -> &Vec<Box<Value>> {
         match self.get_flag_value(name).as_array() {
-            Err(e) => self.bad_flag(name,e.description()),
+            Err(e) => self.quit(&self.error_msg(name,e.description())),
             Ok(arr) => {
                 // empty array matches all types
                 if arr.len() == 0 { return arr; }
                 // otherwise check the type of the first element
                 let ref v = *(arr[0]);
                 let tname = v.type_of().short_name();
-                if tname == kind {arr} else  { self.bad_flag(name,kind) }
+                if tname == kind {
+                    arr
+                } else {
+                    self.quit(&self.error_msg(name,kind))
+                }
             }
         }
     }
