@@ -57,7 +57,7 @@ pub fn dedent(s: &str) -> String {
     }
     if let Some(pos) = idx {
         while let Some(line) = lines.next() {
-            res += &line[pos..];
+            res += if line.len() >= pos { &line[pos..] } else { line };
             res.push('\n');
         }
     }
