@@ -69,12 +69,12 @@ impl <'a> Args<'a> {
 
     /// bail out of program with non-zero return code.
     /// May force this to panic instead with the
-    /// EASY_DONT_QUIT_PANIC environment variable.
+    /// LAPP_PANIC environment variable.
     pub fn quit(&self, msg: &str) -> ! {
         let path = env::current_exe().unwrap();
         let exe = path.file_name().unwrap().to_string_lossy();
         let text = format!("{} error: {}\nType {} --help for more information",exe,msg,exe);
-        if env::var("RUST_BACKTRACE").is_ok() {
+        if env::var("LAPP_PANIC").is_ok() {
             panic!(text);
         } else {
             writeln!(&mut io::stderr(),"{}",text).unwrap();
