@@ -41,7 +41,8 @@ pub enum Type {
     FileIn,
     FileOut,
     None,
-    Arr(Box<Type>)
+    Arr(Box<Type>),
+    Error,
 }
 
 impl Default for Type {
@@ -107,12 +108,12 @@ impl Type {
         Type::Int =>
             match s.parse::<i32>() {
                 Ok(n) => Ok(Value::Int(n)),
-                Err(e) => error(format!("can't convert '{}' to integer - {}",s,e.description()))
+                Err(e) => Ok(Value::Error(format!("can't convert '{}' to integer - {}",s,e.description())))
             },
         Type::Float =>
             match s.parse::<f32>() {
                 Ok(v) => Ok(Value::Float(v)),
-                Err(e) => error(format!("can't convert '{}' to float - {}",s,e.description()))
+                Err(e) => Ok(Value::Error(format!("can't convert '{}' to float - {}",s,e.description())))
             },
         Type::FileIn => Ok(Value::FileIn(s.to_string())),
         Type::FileOut => Ok(Value::FileOut(s.to_string())),
@@ -146,7 +147,8 @@ pub enum Value {
     FileIn(String),
     FileOut(String),
     None,
-    Arr(Vec<Box<Value>>)
+    Arr(Vec<Box<Value>>),
+    Error(String),
 }
 
 impl Default for Value {
@@ -154,20 +156,24 @@ impl Default for Value {
 }
 
 impl Value {
+    fn type_error<T>(&self, kind: &str) -> Result<T> {
+        error(format!("not a {}, but {}",kind,self.type_of().short_name()))
+    }
+    
     pub fn as_string(&self) -> Result<String> {
-        match *self { Value::Str(ref s) => Ok(s.clone()), _ => error("not a string") }
+        match *self { Value::Str(ref s) => Ok(s.clone()), _ => self.type_error("string") }
     }
 
     pub fn as_int(&self) -> Result<i32> {
-        match *self { Value::Int(n) => Ok(n), _ => error("not an integer" )}
+        match *self { Value::Int(n) => Ok(n), _ => self.type_error("integer" )}
     }
 
     pub fn as_float(&self) -> Result<f32> {
-        match *self { Value::Float(x) => Ok(x), _ => error("not a float") }
+        match *self { Value::Float(x) => Ok(x), _ => self.type_error("float") }
     }
 
     pub fn as_bool(&self) -> Result<bool> {
-        match *self { Value::Bool(b) => Ok(b), _ => error("not a boolean") }
+        match *self { Value::Bool(b) => Ok(b), _ => self.type_error("boolean") }
     }
 
     pub fn as_infile(&self) -> Result<Box<Read>> {
@@ -179,7 +185,7 @@ impl Value {
                     Err(e) => error(format!("can't open '{}' for reading: {}",s, e.description()))
                 }
              },
-              _ => error("not a infile")
+              _ => self.type_error("infile")
         }
     }
 
@@ -192,13 +198,13 @@ impl Value {
                     Err(e) => error(format!("can't open '{}' for writing: {}",s, e.description()))
                 }
              },
-              _ => error("not an outfile")
+              _ => self.type_error("not an outfile")
         }
     }
 
 
     pub fn as_array(&self) -> Result<&Vec<Box<Value>>> {
-        match *self { Value::Arr(ref vi) => Ok(vi), _ => error("not an array") }
+        match *self { Value::Arr(ref vi) => Ok(vi), _ => self.type_error("array") }
     }
 
     pub fn type_of(&self) -> Type {
@@ -210,18 +216,20 @@ impl Value {
         Value::FileIn(_) => Type::FileIn,
         Value::FileOut(_) => Type::FileOut,
         Value::None => Type::None,
+        Value::Error(_) => Type::Error,
         // watch out here...
         Value::Arr(ref v) => (*v[0]).type_of()
         }
     }
 
+    // This converts the '(default STR)' specifier into the actual value (and hence type)
     pub fn from_value (val: &str) -> Result<Value> {
         let firstc = val.chars().next().unwrap();
         if firstc.is_digit(10) {
             let t = if val.find('.').is_some() { Type::Float } else { Type::Int };
             t.parse_string(val)
         } else
-        if firstc == '\'' { // strip quotes
+        if firstc == '\'' { // strip quotes, _definitely_ a string
             Ok(Value::Str((&val[1..(val.len()-1)]).to_string()))
         } else
         if val == "stdin" {

@@ -141,24 +141,28 @@ impl <'a> Args<'a> {
 
         if let Some(idx) = slice.find(|c: char| ! c.is_whitespace()) {
             let mut flag: Flag = Default::default();
+            let flag_error = |flag: &Flag,msg: &str| {
+                error(format!("{}: flag '{}'",msg,flag.long))
+            };
             let mut is_positional = false;
             slice = &slice[idx..];
             let is_flag = starts_with(&mut slice,"-");
             let mut long_flag = starts_with(&mut slice,"-");
             if is_flag && ! long_flag { // short flag
                 flag.short = (&slice[0..1]).chars().next().unwrap();
+                flag.long = flag.short.to_string();
                 if ! flag.short.is_alphanumeric() {
-                    return error(format!("{:?} isn't allowed: only letters or digits in short flags",flag.short));
+                    return flag_error(&flag,"not allowed: only letters or digits in short flags");
                 }
                 slice = &slice[1..];
                 if let Some(0) = slice.find(|c: char| c.is_alphanumeric()) {
-                   return error(format!("short flags should have one character"));
+                   return flag_error(&flag,"short flags should have one character");
                 }
                 if starts_with(&mut slice,",") {
                     slice = skipws(slice);
                     long_flag = starts_with(&mut slice,"--");
                     if ! long_flag {
-                        return error("expecting long flag after short flag");
+                        return flag_error(&flag,"expecting long flag after short flag");
                     }
                 }
             }
@@ -169,7 +173,7 @@ impl <'a> Args<'a> {
                 flag.long = parts.0.to_string();
                 slice = parts.1;
                 if slice.len() > 0 && ! (slice.starts_with(" ") || slice.starts_with("."))  {
-                    return error(format!("long flags can only contain letters, numbers, '_' or '-'"));
+                    return flag_error(&flag,"long flags can only contain letters, numbers, '_' or '-'");
                 }
             } else
             if starts_with(&mut slice, "<") { // positional argument
@@ -201,14 +205,14 @@ impl <'a> Args<'a> {
                     // default VALUE or TYPE
                     let parts: Vec<_> = rest.split_whitespace().collect();
                     if parts.len() == 0 {
-                        return error(format!("nothing inside type specifier for flag '{}'",flag.long));
+                        return flag_error(&flag,"nothing inside type specifier");
                     }
                     if parts.len() == 2 {
                         if parts[0] == "default" {
                             flag.defval = Value::from_value(parts[1])?;
                             flag.vtype = flag.defval.type_of();
                         } else {
-                            return error(format!("expecting (default <value>) for flag '{}'",flag.long));
+                            return flag_error(&flag,"expecting (default <value>)");
                         }
                     } else {
                         flag.vtype = Type::from_name(parts[0])?;
@@ -223,7 +227,7 @@ impl <'a> Args<'a> {
                     if is_positional {
                         flag.is_multiple = true;
                         if self.varargs {
-                            return error("only last argument can occur multiple times");
+                            return flag_error(&flag,"only last argument can occur multiple times");
                         }
                         self.varargs = true;
                     } else { // i.e the flag type is an array of a basic scalar type
@@ -243,7 +247,7 @@ impl <'a> Args<'a> {
 
             // it is an error to specify a flag twice...
             if self.flags_by_long_ref(&flag.long).is_ok() {
-                return error(format!("flag {:?} already defined",flag.long));
+                return flag_error(&flag,"already defined");
             }
             self.flags.push(flag);
         }
@@ -361,12 +365,18 @@ impl <'a> Args<'a> {
         Ok(())
     }
 
+    // there are three bad scenarios here. First, the flag wasn't found.
+    // Second, the flag's value was not set. Third, the flag's value was an error.
     fn result_flag_value (&self, name: &str) -> Result<&Value> {
         if let Ok(ref flag) = self.flags_by_long_ref(name) {
            if flag.value.is_none() {
                 self.bad_flag(name,"required")
             } else {
-                Ok(&flag.value)
+                if let Value::Error(ref s) = flag.value {
+                    error(s)
+                } else {
+                    Ok(&flag.value)
+                }
             }
         } else {
             self.bad_flag(name,"unknown")
@@ -399,7 +409,21 @@ impl <'a> Args<'a> {
     pub fn get_float_result(&self, name: &str) -> Result<f32> {
         self.result_flag(name,|v| v.as_float())
     }
+    
+    /// get flag as boolean
+    pub fn get_bool_result(&self, name: &str) -> Result<bool> {
+        self.result_flag(name,|v| v.as_bool())
+    }
+    
+    /// get flag as a file for reading
+    pub fn get_infile_result(&self, name: &str) -> Result<Box<Read>> {
+        self.result_flag(name,|v| v.as_infile())
+    }
 
+    /// get flag as a file for writing
+    pub fn get_outfile_result(&self, name: &str) -> Result<Box<Write>> {
+        self.result_flag(name,|v| v.as_outfile())
+    }
 
     fn get_flag_value (&self, name: &str) -> &Value {
         match self.result_flag_value(name) {
@@ -415,88 +439,104 @@ impl <'a> Args<'a> {
     fn bad_flag <T>(&self, tname: &str, msg: &str) -> Result<T> {
         error(&self.error_msg(tname,msg))
     }
-
-    fn get_flag<T, F: Fn(&Value) -> Result<T>> (&self, name: &str, extract: F) -> T {
-        match extract(self.get_flag_value(name)) {
+   
+    fn unwrap<T>(&self, res: Result<T>) -> T {
+        match res {
             Ok(v) => v,
-            Err(e) => self.quit(&self.error_msg(name,e.description()))
+            Err(e) => self.quit(e.description())
         }
     }
 
     /// get flag as a string, quitting otherwise.
     pub fn get_string(&self, name: &str) -> String {
-        self.get_flag(name,|v| v.as_string())
+        self.unwrap(self.get_string_result(name))
     }
 
     /// get flag as an integer, quitting otherwise.
     pub fn get_integer(&self, name: &str) -> i32 {
-        self.get_flag(name,|v| v.as_int())
+        self.unwrap(self.get_integer_result(name))
     }
 
     /// get flag as a float, quitting otherwise.
     pub fn get_float(&self, name: &str) -> f32 {
-        self.get_flag(name,|v| v.as_float())
+        self.unwrap(self.get_float_result(name))
     }
 
     /// get flag as a bool, quitting otherwise.
     pub fn get_bool(&self, name: &str) -> bool {
-        self.get_flag(name,|v| v.as_bool())
+        self.unwrap(self.get_bool_result(name))
     }
 
     /// get flag as a file for reading, quitting otherwise.
     pub fn get_infile(&self, name: &str) -> Box<Read> {
-        self.get_flag(name,|v| v.as_infile())
+        self.unwrap(self.get_infile_result(name))
     }
 
     /// get flag as a file for writing, quitting otherwise.
     pub fn get_outfile(&self, name: &str) -> Box<Write> {
-        self.get_flag(name,|v| v.as_outfile())
+        self.unwrap(self.get_outfile_result(name))
     }
 
-    fn get_boxed_array(&self, name: &str, kind: &str) -> &Vec<Box<Value>> {
+    fn get_boxed_array(&self, name: &str, kind: &str) -> Result<&Vec<Box<Value>>> {
         match self.get_flag_value(name).as_array() {
-            Err(e) => self.quit(&self.error_msg(name,e.description())),
+            Err(e) => Err(e),
             Ok(arr) => {
                 // empty array matches all types
-                if arr.len() == 0 { return arr; }
+                if arr.len() == 0 { return Ok(arr); }
                 // otherwise check the type of the first element
                 let ref v = *(arr[0]);
                 let tname = v.type_of().short_name();
                 if tname == kind {
-                    arr
+                    Ok(arr)
                 } else {
-                    self.quit(&self.error_msg(name,kind))
+                    error(self.error_msg(name,kind))
                 }
             }
         }
     }
 
 
-    fn get_array<T,F>(&self, name: &str, kind: &str, extract: F) -> Vec<T>
+    fn get_array_result<T,F>(&self, name: &str, kind: &str, extract: F) -> Result<Vec<T>>
     where T: Sized, F: Fn(&Box<Value>)->Result<T> {
-        let va = self.get_boxed_array(name,kind);
+        let va = self.get_boxed_array(name,kind)?;
         let mut res = Vec::new();
         for v in va {
-            let n = extract(v).unwrap();
+            let n = extract(v)?;
             res.push(n);
         }
-        res
+        Ok(res)
     }
 
-    /// get multiple flag as an array of strings, quitting otherwise.
-    pub fn get_strings(&self, name: &str) -> Vec<String> {
-        self.get_array(name,"string",|b| b.as_string())
+    /// get a multiple flag as an array of strings
+    pub fn get_strings_result(&self, name: &str) -> Result<Vec<String>> {
+        self.get_array_result(name,"string",|b| b.as_string())
     }
 
-    /// get multiple flag as an array of integers, quitting otherwise.
-    pub fn get_integers(&self, name: &str) -> Vec<i32> {
-        self.get_array(name,"integer",|b| b.as_int())
+    /// get a multiple flag as an array of integers
+    pub fn get_integers_result(&self, name: &str) -> Result<Vec<i32>> {
+        self.get_array_result(name,"integer",|b| b.as_int())
     }
 
-    /// get multiple flag as an array of floats, quitting otherwise.
-    pub fn get_floats(&self, name: &str) -> Vec<f32> {
-        self.get_array(name,"float",|b| b.as_float())
+    /// get a multiple flag as an array of floats
+    pub fn get_floats_result(&self, name: &str) -> Result<Vec<f32>> {
+        self.get_array_result(name,"float",|b| b.as_float())
     }
+    
+    /// get a multiple flag as an array of strings, quitting otherwise
+    pub fn get_strings(&self, name: &str) -> Vec<String> {    
+        self.unwrap(self.get_strings_result(name))
+    }
+    
+    /// get a multiple flag as an array of integers, quitting otherwise
+    pub fn get_integers(&self, name: &str) -> Vec<i32> {    
+        self.unwrap(self.get_integers_result(name))
+    }
+    
+    /// get a multiple flag as an array of floats, quitting otherwise
+    pub fn get_floats(&self, name: &str) -> Vec<f32> {    
+        self.unwrap(self.get_floats_result(name))
+    }
+    
 
 }
 
