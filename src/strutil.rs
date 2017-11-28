@@ -5,6 +5,13 @@ pub fn skipws(slice: &str) -> &str {
     &slice[nxt..]
 }
 
+pub fn grab_word<'a>(pslice: &mut &str) -> String {
+    let nxt = pslice.find(|c: char| c.is_whitespace()).unwrap_or(pslice.len());
+    let word = (&pslice[0..nxt]).to_string();
+    *pslice = skipws(&pslice[nxt..]);
+    word
+}
+
 pub fn starts_with(pslice: &mut &str, start: &str) -> bool {
     if pslice.starts_with(start) {
         *pslice = &pslice[start.len()..];

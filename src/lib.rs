@@ -205,30 +205,34 @@ impl <'a> Args<'a> {
             }
             if starts_with(&mut slice,"(") {
                 let r = grab_upto(&mut slice, ")")?;
-                let mut rest = r.as_str();
+                let mut rest = r.as_str().trim();
                 let multable = ends_with(&mut rest,"...");
                 if let Some((b1,b2)) = split_with(rest,"..") {
                     // bounds on a number type
                     flag.set_range_constraint(b1,b2)?;
                 } else {
-                    let mut rest = rest.trim();
                     // default VALUE or TYPE
                     if rest.len() == 0 {
                         return flag_error(&flag,"nothing inside type specifier");
                     }
                     if starts_with(&mut rest,"default ") {
-                        skipws(&mut rest);
+                        rest = skipws(rest);
                         flag.defval = Value::from_value(rest)?;
                         flag.vtype = flag.defval.type_of();
                     } else {
+                        let name = grab_word(&mut rest);
                         // custom types are _internally_ stored as string types,
                         // but we must verify that it is a known type!
-                        let name = rest;
-                        flag.vtype = if self.user_types.iter().any(|s| s == name) {
+                        flag.vtype = if self.user_types.iter().any(|s| s == name.as_str()) {
                             Type::Str
                         } else {
-                            Type::from_name(name)?
+                            Type::from_name(&name)?
                         };
+                        if starts_with(&mut rest,"default ") {
+                            rest = skipws(rest);
+                            flag.defval = Value::from_value(rest)?;
+                            // TBD sanity checks here!
+                        }
                     }
                 }
                 // if type is followed by '...' then the flag is also represented
