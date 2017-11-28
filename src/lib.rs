@@ -211,22 +211,19 @@ impl <'a> Args<'a> {
                     // bounds on a number type
                     flag.set_range_constraint(b1,b2)?;
                 } else {
+                    let mut rest = rest.trim();
                     // default VALUE or TYPE
-                    let parts: Vec<_> = rest.split_whitespace().collect();
-                    if parts.len() == 0 {
+                    if rest.len() == 0 {
                         return flag_error(&flag,"nothing inside type specifier");
                     }
-                    if parts.len() == 2 {
-                        if parts[0] == "default" {
-                            flag.defval = Value::from_value(parts[1])?;
-                            flag.vtype = flag.defval.type_of();
-                        } else {
-                            return flag_error(&flag,"expecting (default <value>)");
-                        }
+                    if starts_with(&mut rest,"default ") {
+                        skipws(&mut rest);
+                        flag.defval = Value::from_value(rest)?;
+                        flag.vtype = flag.defval.type_of();
                     } else {
                         // custom types are _internally_ stored as string types,
                         // but we must verify that it is a known type!
-                        let name = parts[0];
+                        let name = rest;
                         flag.vtype = if self.user_types.iter().any(|s| s == name) {
                             Type::Str
                         } else {
