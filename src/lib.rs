@@ -62,12 +62,18 @@ pub struct Args<'a> {
     pos: usize,
     text: &'a str,
     varargs: bool,
+    user_types: Vec<String>,
 }
 
 impl <'a> Args<'a> {
     /// provide a _usage string_ from which we extract flag definitions
     pub fn new(text: &'a str) -> Args {
-        Args{flags: Vec::new(), pos: 0, text: text, varargs: false}
+        Args{flags: Vec::new(), pos: 0, text: text, varargs: false, user_types: Vec::new()}
+    }
+    
+    pub fn user_types(&mut self, types: &[&str]) {
+        let v: Vec<String> = types.iter().map(|s| s.to_string()).collect();
+        self.user_types = v;
     }
 
     /// bail out of program with non-zero return code.
@@ -122,7 +128,7 @@ impl <'a> Args<'a> {
         }
     }
 
-    fn parse(&mut self) {
+    pub fn parse(&mut self) {
         if let Err(e) = self.parse_spec() { self.quit(e.description()); }
         let v: Vec<String> = env::args().skip(1).collect();
         if let Err(e) = self.parse_command_line(v) { self.quit(e.description()); }
@@ -218,7 +224,14 @@ impl <'a> Args<'a> {
                             return flag_error(&flag,"expecting (default <value>)");
                         }
                     } else {
-                        flag.vtype = Type::from_name(parts[0])?;
+                        // custom types are _internally_ stored as string types,
+                        // but we must verify that it is a known type!
+                        let name = parts[0];
+                        flag.vtype = if self.user_types.iter().any(|s| s == name) {
+                            Type::Str
+                        } else {
+                            Type::from_name(name)?
+                        };
                     }
                 }
                 // if type is followed by '...' then the flag is also represented
@@ -581,14 +594,14 @@ mod tests {
     use super::*;
 
     const SIMPLE: &'static str = "
-Testing Lapp
-  -v, --verbose verbose flag
-  -k   arb flag
-  -o, --output (default 'stdout')
-  -p   (integer...)
-  -I, --include... (string)
-  <in> (string)
-  <out> (string...)
+        Testing Lapp
+          -v, --verbose verbose flag
+          -k   arb flag
+          -o, --output (default 'stdout')
+          -p   (integer...)
+          -I, --include... (string)
+          <in> (string)
+          <out> (string...)
 ";
 
     fn arg_strings(a: &[&str]) -> Vec<String> {
@@ -674,6 +687,40 @@ Testing Lapp
         assert_eq!(res.p,&[]);
         assert_eq!(res.include,&[".","..","lib"]);
         assert_eq!(res.out,&["hello"]);
+    }
+    
+    const CUSTOM: &str = "
+        Custom types need to be given names
+        so we accept them as valid:
+        --hex (hex)
+    ";
+        
+    // they need to be user types that implement FromStr    
+    use std::str::FromStr;
+    use std::num::ParseIntError;
+    
+    struct Hex {
+        value: u64
+    }
+
+    impl FromStr for Hex {
+        type Err = ParseIntError;
+        
+        fn from_str(s: &str) -> ::std::result::Result<Self,Self::Err> {
+            let value = u64::from_str_radix(s,16)?;
+            Ok(Hex{value: value})
+        }
+    }
+    
+    
+    #[test]
+    fn test_custom() {
+        let mut args = Args::new(CUSTOM);
+        args.user_types(&["hex"]);
+        args.parse_spec().expect("spec failed");
+        args.parse_command_line(arg_strings(&["--hex","FF"])).expect("scan failed");
+        let hex: Hex = args.get("hex");
+        assert_eq!(hex.value,0xFF);
     }
 
 
