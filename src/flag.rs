@@ -43,12 +43,12 @@ impl Flag {
         if tn == "integer" {
             let i1 = b1.as_int().unwrap();
             let i2 = b2.as_int().unwrap();
-            let msg = format!("{} {}..{}",self.long,i1,i2);
+            let msg = format!("flag '{}' out of range {}..{}",self.long,i1,i2);
             self.constraint = Some(Box::new(
                 move |v| {
                     let i = v.as_int().unwrap();
                     if i < i1 || i > i2 {
-                        return error(format!("{} out of range",msg));
+                        return error(&msg);
                     }
                     Ok(Value::Int(i))
                 }
@@ -56,12 +56,12 @@ impl Flag {
         } else {
             let x1 = b1.as_float().unwrap();
             let x2 = b2.as_float().unwrap();
-            let msg = format!("{} {}..{}",self.long,x1,x2);
+            let msg = format!("flag '{}' out of range {}..{}",self.long,x1,x2);
             self.constraint = Some(Box::new(
                 move |v| {
                     let x = v.as_float().unwrap();
                     if x < x1 || x > x2 {
-                        return error(format!("{} out of range",msg));
+                        return error(&msg);
                     }
                     Ok(Value::Float(x))
                 }
