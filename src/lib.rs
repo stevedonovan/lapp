@@ -47,11 +47,14 @@ use std::env;
 use std::io;
 use std::io::{Write,Read};
 use std::error::Error;
+use std::str::FromStr;
+use std::fmt::Display;
 
 mod strutil;
 mod types;
 mod flag;
 use types::*;
+pub type Result<T> = types::Result<T>;
 use flag::Flag;
 
 pub struct Args<'a> {
@@ -425,8 +428,8 @@ impl <'a> Args<'a> {
     /// get flag as a string
     pub fn get_string_result(&self, name: &str) -> Result<String> {
         self.result_flag(name,|v| v.as_string())
-    }
-
+    }  
+ 
     /// get flag as an integer
     pub fn get_integer_result(&self, name: &str) -> Result<i32> {
         self.result_flag(name,|v| v.as_int())
@@ -451,6 +454,18 @@ impl <'a> Args<'a> {
     pub fn get_outfile_result(&self, name: &str) -> Result<Box<Write>> {
         self.result_flag(name,|v| v.as_outfile())
     }
+    
+    /// get flag as any value which can parsed from a string.
+    // The magic here is that Rust needs to be told that
+    // the associated Err type can be displayed.
+    pub fn get_result<T>(&self, name: &str) -> Result<T>
+    where T: FromStr, <T as FromStr>::Err : Display
+    {
+        match self.result_flag(name,|v| v.as_string())?.parse::<T>() {
+            Ok(v) => Ok(v),
+            Err(e) => error(e.to_string())
+        }
+    }   
 
     /// get flag as a string, quitting otherwise.
     pub fn get_string(&self, name: &str) -> String {
@@ -480,6 +495,16 @@ impl <'a> Args<'a> {
     /// get flag as a file for writing, quitting otherwise.
     pub fn get_outfile(&self, name: &str) -> Box<Write> {
         self.unwrap(self.get_outfile_result(name))
+    }
+    
+    /// get flag as any value which can parsed from a string, quitting otherwise.
+    pub fn get<T>(&self, name: &str) -> T
+    where T: FromStr, <T as FromStr>::Err : Display
+    {
+        match self.get_result::<T>(name) {
+            Ok(v) => v,
+            Err(e) => self.quit(&e.to_string())
+        }
     }
 
     fn get_boxed_array(&self, name: &str, kind: &str) -> Result<&Vec<Box<Value>>> {
