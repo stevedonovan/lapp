@@ -84,6 +84,10 @@ impl Flag {
         }
         Ok(())
     }
+    
+    pub fn position(&self) -> Option<usize> {
+        if self.pos > 0 {Some(self.pos)} else {None}
+    }
 
     // When checking any missing flags after scanning args, insist
     // that they have default values - otherwise they are 'required'.

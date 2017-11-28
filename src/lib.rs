@@ -276,7 +276,7 @@ impl <'a> Args<'a> {
     fn flags_by_pos(&mut self, pos: usize) -> Result<&mut Flag> {
         self.flags.iter_mut()
             .filter(|&ref f| f.pos == pos)
-            .next().ok_or(LappError(format!("no positional arg '{}'",pos)))
+            .next().ok_or(LappError(format!("no arg #{}",pos)))
     }
 
     fn parse_command_line(&mut self, v: Vec<String>) -> Result<()> {
@@ -364,31 +364,58 @@ impl <'a> Args<'a> {
         }
         Ok(())
     }
+    
+    fn error_msg(&self, tname: &str, msg: &str, pos: Option<usize>) -> String {
+        if let Some(idx) = pos {
+            format!("argument #{} '{}': {}",idx,tname,msg)            
+        } else {
+            format!("flag '{}': {}",tname,msg)
+        }
+    }
+
+    fn bad_flag <T>(&self, tname: &str, msg: &str, pos: Option<usize>) -> Result<T> {
+        error(&self.error_msg(tname,msg,pos))
+    }
+   
+    fn unwrap<T>(&self, res: Result<T>) -> T {
+        match res {
+            Ok(v) => v,
+            Err(e) => self.quit(e.description())
+        }
+    }    
 
     // there are three bad scenarios here. First, the flag wasn't found.
     // Second, the flag's value was not set. Third, the flag's value was an error.
     fn result_flag_value (&self, name: &str) -> Result<&Value> {
         if let Ok(ref flag) = self.flags_by_long_ref(name) {
+           let positional = flag.position();
            if flag.value.is_none() {
-                self.bad_flag(name,"required")
+                self.bad_flag(name,"is required",positional)
             } else {
                 if let Value::Error(ref s) = flag.value {
-                    error(s)
+                   self.bad_flag(name,s,positional)
                 } else {
                     Ok(&flag.value)
                 }
             }
         } else {
-            self.bad_flag(name,"unknown")
+            self.bad_flag(name,"is unknown",None)
         }
     }
 
+    // this extracts the desired value from the Value struct using a closure.
+    // This operation may fail, e.g. args.get_float("foo") is an error if the
+    // flag type is integer.
     fn result_flag<T, F: Fn(&Value) -> Result<T>> (&self, name: &str, extract: F) -> Result<T> {
         match self.result_flag_value(name) {
             Ok(value) => {
                 match extract(value) {
                     Ok(v) => Ok(v),
-                    Err(e) => self.bad_flag(name,e.description())
+                    Err(e) => {
+                        // was this a positional arg or a flag?
+                        let p = self.flags_by_long_ref(name).unwrap().position();
+                        self.bad_flag(name,e.description(),p)
+                    }
                 }
             },
             Err(e) => Err(e)
@@ -425,28 +452,6 @@ impl <'a> Args<'a> {
         self.result_flag(name,|v| v.as_outfile())
     }
 
-    fn get_flag_value (&self, name: &str) -> &Value {
-        match self.result_flag_value(name) {
-            Ok(val_ref) => val_ref,
-            Err(e) => self.quit(e.description())
-        }
-    }
-
-    fn error_msg(&self, tname: &str, msg: &str) -> String {
-        format!("flag '{}': {}",tname,msg)
-    }
-
-    fn bad_flag <T>(&self, tname: &str, msg: &str) -> Result<T> {
-        error(&self.error_msg(tname,msg))
-    }
-   
-    fn unwrap<T>(&self, res: Result<T>) -> T {
-        match res {
-            Ok(v) => v,
-            Err(e) => self.quit(e.description())
-        }
-    }
-
     /// get flag as a string, quitting otherwise.
     pub fn get_string(&self, name: &str) -> String {
         self.unwrap(self.get_string_result(name))
@@ -478,23 +483,19 @@ impl <'a> Args<'a> {
     }
 
     fn get_boxed_array(&self, name: &str, kind: &str) -> Result<&Vec<Box<Value>>> {
-        match self.get_flag_value(name).as_array() {
-            Err(e) => Err(e),
-            Ok(arr) => {
-                // empty array matches all types
-                if arr.len() == 0 { return Ok(arr); }
-                // otherwise check the type of the first element
-                let ref v = *(arr[0]);
-                let tname = v.type_of().short_name();
-                if tname == kind {
-                    Ok(arr)
-                } else {
-                    error(self.error_msg(name,kind))
-                }
-            }
+        let arr = self.result_flag_value(name)?.as_array()?;
+        // empty array matches all types
+        if arr.len() == 0 { return Ok(arr); }
+        // otherwise check the type of the first element
+        let ref v = *(arr[0]);
+        let tname = v.type_of().short_name();
+        if tname == kind {
+            Ok(arr)
+        } else {
+            let msg = format!("wanted array of {}, but is array of {}",kind,tname);
+            error(self.error_msg(name,&msg,None))
         }
     }
-
 
     fn get_array_result<T,F>(&self, name: &str, kind: &str, extract: F) -> Result<Vec<T>>
     where T: Sized, F: Fn(&Box<Value>)->Result<T> {

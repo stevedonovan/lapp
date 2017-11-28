@@ -73,6 +73,7 @@ impl Type {
     }
 
     pub fn short_name(&self) -> String {
+        let s;
         (match *self {
          Type::Str => "string",
          Type::Int => "integer",
@@ -80,7 +81,7 @@ impl Type {
          Type::Bool => "bool",
          Type::FileIn => "infile",
          Type::FileOut => "outfile",
-         Type::Arr(_) => "array",
+         Type::Arr(ref t) => { s=format!("array of {}",t.short_name()); s.as_str() }
          _ => "bad"
         }).to_string()
     }
@@ -204,7 +205,10 @@ impl Value {
 
 
     pub fn as_array(&self) -> Result<&Vec<Box<Value>>> {
-        match *self { Value::Arr(ref vi) => Ok(vi), _ => self.type_error("array") }
+        match *self {
+            Value::Arr(ref vi) => Ok(vi),
+            _ => self.type_error("array")
+        }
     }
 
     pub fn type_of(&self) -> Type {
@@ -218,7 +222,7 @@ impl Value {
         Value::None => Type::None,
         Value::Error(_) => Type::Error,
         // watch out here...
-        Value::Arr(ref v) => (*v[0]).type_of()
+        Value::Arr(ref v) => Type::Arr(Box::new((*v[0]).type_of()))
         }
     }
 
