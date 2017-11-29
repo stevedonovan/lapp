@@ -119,9 +119,10 @@ impl Type {
         Type::FileIn => Ok(Value::FileIn(s.to_string())),
         Type::FileOut => Ok(Value::FileOut(s.to_string())),
         Type::Arr(ref bt) => {
-            // multiple values either space or comma separated
+            // multiple values either space or comma separated,
+            // but we will trim anyway
             let parts: Vec<_> = if s.find(',').is_some() {
-                s.split(',').collect()
+                s.split(',').map(|s| s.trim()).collect()
             } else {
                 s.split_whitespace().collect()
             };
@@ -160,7 +161,7 @@ impl Value {
     fn type_error<T>(&self, kind: &str) -> Result<T> {
         error(format!("not a {}, but {}",kind,self.type_of().short_name()))
     }
-    
+
     pub fn as_string(&self) -> Result<String> {
         match *self { Value::Str(ref s) => Ok(s.clone()), _ => self.type_error("string") }
     }
