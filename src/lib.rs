@@ -70,7 +70,7 @@ impl <'a> Args<'a> {
     pub fn new(text: &'a str) -> Args {
         Args{flags: Vec::new(), pos: 0, text: text, varargs: false, user_types: Vec::new()}
     }
-    
+
     pub fn user_types(&mut self, types: &[&str]) {
         let v: Vec<String> = types.iter().map(|s| s.to_string()).collect();
         self.user_types = v;
@@ -217,8 +217,8 @@ impl <'a> Args<'a> {
                     }
                     if starts_with(&mut rest,"default ") {
                         rest = skipws(rest);
-                        flag.defval = Value::from_value(rest)?;
-                        flag.vtype = flag.defval.type_of();
+                        // flag type will be deduced
+                        flag.set_default_from_string(rest,true)?;
                     } else {
                         let name = grab_word(&mut rest);
                         // custom types are _internally_ stored as string types,
@@ -230,8 +230,8 @@ impl <'a> Args<'a> {
                         };
                         if starts_with(&mut rest,"default ") {
                             rest = skipws(rest);
-                            flag.defval = Value::from_value(rest)?;
-                            // TBD sanity checks here!
+                            // flag already has a definite type
+                            flag.set_default_from_string(rest,false)?;
                         }
                     }
                 }
@@ -381,10 +381,10 @@ impl <'a> Args<'a> {
         }
         Ok(())
     }
-    
+
     fn error_msg(&self, tname: &str, msg: &str, pos: Option<usize>) -> String {
         if let Some(idx) = pos {
-            format!("argument #{} '{}': {}",idx,tname,msg)            
+            format!("argument #{} '{}': {}",idx,tname,msg)
         } else {
             format!("flag '{}': {}",tname,msg)
         }
@@ -393,17 +393,17 @@ impl <'a> Args<'a> {
     fn bad_flag <T>(&self, tname: &str, msg: &str, pos: Option<usize>) -> Result<T> {
         error(&self.error_msg(tname,msg,pos))
     }
-   
+
     fn unwrap<T>(&self, res: Result<T>) -> T {
         match res {
             Ok(v) => v,
             Err(e) => self.quit(e.description())
         }
-    }    
+    }
 
     // there are three bad scenarios here. First, the flag wasn't found.
     // Second, the flag's value was not set. Third, the flag's value was an error.
-    fn result_flag_value (&self, name: &str) -> Result<&Value> {
+    fn result_flag_flag (&self, name: &str) -> Result<&Flag> {
         if let Ok(ref flag) = self.flags_by_long_ref(name) {
            let positional = flag.position();
            if flag.value.is_none() {
@@ -412,12 +412,16 @@ impl <'a> Args<'a> {
                 if let Value::Error(ref s) = flag.value {
                    self.bad_flag(name,s,positional)
                 } else {
-                    Ok(&flag.value)
+                    Ok(flag)
                 }
             }
         } else {
             self.bad_flag(name,"is unknown",None)
         }
+    }
+
+    fn result_flag_value (&self, name: &str) -> Result<&Value> {
+        Ok(&(self.result_flag_flag(name)?.value))
     }
 
     // this extracts the desired value from the Value struct using a closure.
@@ -439,11 +443,25 @@ impl <'a> Args<'a> {
         }
     }
 
+    /// has this flag been set? Quits if it's an unknown flag
+    pub fn flag_present(&self, name: &str) -> bool {
+        if let Ok(ref flag) = self.flags_by_long_ref(name) {
+           if flag.value.is_none() {
+                false
+            } else {
+                true
+            }
+        } else {
+            self.quit(&format!("'{}' is not a flag",name));
+        }
+    }
+
+
     /// get flag as a string
     pub fn get_string_result(&self, name: &str) -> Result<String> {
         self.result_flag(name,|v| v.as_string())
-    }  
- 
+    }
+
     /// get flag as an integer
     pub fn get_integer_result(&self, name: &str) -> Result<i32> {
         self.result_flag(name,|v| v.as_int())
@@ -453,12 +471,12 @@ impl <'a> Args<'a> {
     pub fn get_float_result(&self, name: &str) -> Result<f32> {
         self.result_flag(name,|v| v.as_float())
     }
-    
+
     /// get flag as boolean
     pub fn get_bool_result(&self, name: &str) -> Result<bool> {
         self.result_flag(name,|v| v.as_bool())
     }
-    
+
     /// get flag as a file for reading
     pub fn get_infile_result(&self, name: &str) -> Result<Box<Read>> {
         self.result_flag(name,|v| v.as_infile())
@@ -468,18 +486,23 @@ impl <'a> Args<'a> {
     pub fn get_outfile_result(&self, name: &str) -> Result<Box<Write>> {
         self.result_flag(name,|v| v.as_outfile())
     }
-    
+
+    /// get flag always as text, if it's defined
+    pub fn get_text_result(&self, name: &str) -> Result<&String> {
+        self.result_flag_flag(name).map(|f| &f.strings[0])
+    }
+
     /// get flag as any value which can parsed from a string.
     // The magic here is that Rust needs to be told that
     // the associated Err type can be displayed.
     pub fn get_result<T>(&self, name: &str) -> Result<T>
     where T: FromStr, <T as FromStr>::Err : Display
     {
-        match self.result_flag(name,|v| v.as_string())?.parse::<T>() {
+        match self.get_text_result(name)?.parse::<T>() {
             Ok(v) => Ok(v),
             Err(e) => error(e.to_string())
         }
-    }   
+    }
 
     /// get flag as a string, quitting otherwise.
     pub fn get_string(&self, name: &str) -> String {
@@ -510,7 +533,7 @@ impl <'a> Args<'a> {
     pub fn get_outfile(&self, name: &str) -> Box<Write> {
         self.unwrap(self.get_outfile_result(name))
     }
-    
+
     /// get flag as any value which can parsed from a string, quitting otherwise.
     pub fn get<T>(&self, name: &str) -> T
     where T: FromStr, <T as FromStr>::Err : Display
@@ -561,22 +584,22 @@ impl <'a> Args<'a> {
     pub fn get_floats_result(&self, name: &str) -> Result<Vec<f32>> {
         self.get_array_result(name,"float",|b| b.as_float())
     }
-    
+
     /// get a multiple flag as an array of strings, quitting otherwise
-    pub fn get_strings(&self, name: &str) -> Vec<String> {    
+    pub fn get_strings(&self, name: &str) -> Vec<String> {
         self.unwrap(self.get_strings_result(name))
     }
-    
+
     /// get a multiple flag as an array of integers, quitting otherwise
-    pub fn get_integers(&self, name: &str) -> Vec<i32> {    
+    pub fn get_integers(&self, name: &str) -> Vec<i32> {
         self.unwrap(self.get_integers_result(name))
     }
-    
+
     /// get a multiple flag as an array of floats, quitting otherwise
-    pub fn get_floats(&self, name: &str) -> Vec<f32> {    
+    pub fn get_floats(&self, name: &str) -> Vec<f32> {
         self.unwrap(self.get_floats_result(name))
     }
-    
+
 
 }
 
@@ -603,7 +626,8 @@ mod tests {
           -I, --include... (string)
           <in> (string)
           <out> (string...)
-";
+    ";
+
 
     fn arg_strings(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| s.to_string()).collect()
@@ -612,6 +636,14 @@ mod tests {
     fn empty_strings() -> Vec<String> {
         Vec::new()
     }
+
+    fn parse_args(spec: &'static str, parms: &[&str]) -> Args<'static> {
+        let mut args = Args::new(spec);
+        args.parse_spec().expect("spec failed");
+        args.parse_command_line(arg_strings(parms)).expect("scan failed");
+        args
+    }
+
 
     struct SimpleTest {
         verbose: bool,
@@ -624,9 +656,7 @@ mod tests {
 
     impl SimpleTest {
         fn new(test_args: &[&str]) -> SimpleTest {
-            let mut args = Args::new(SIMPLE);
-            args.parse_spec().expect("spec failed");
-            args.parse_command_line(arg_strings(test_args)).expect("scan failed");
+            let args = parse_args(SIMPLE,test_args);
             SimpleTest {
                 verbose: args.get_bool("verbose"),
                 k: args.get_bool("k"),
@@ -689,31 +719,57 @@ mod tests {
         assert_eq!(res.include,&[".","..","lib"]);
         assert_eq!(res.out,&["hello"]);
     }
-    
+
+    fn err<T>(r: Result<T>) -> String {
+        r.err().unwrap().description().to_string()
+    }
+
+    fn ok<T>(r: Result<T>) -> T {
+        r.unwrap()
+    }
+
+    static ERRS: &str = "
+        testing lapp
+        -s,--str (string)
+        <frodo> (float)
+        <bonzo>... (integer)
+    ";
+
+    #[test]
+    fn test_errors_result() {
+        let aa = parse_args(ERRS,&["1","10","20","30"]);
+        assert_eq!(err(aa.get_string_result("str")),"flag \'str\': is required");
+        assert_eq!(err(aa.get_string_result("frodo")),"argument #1 \'frodo\': not a string, but float");
+        assert_eq!(ok(aa.get_float_result("frodo")),1.0);
+        assert_eq!(ok(aa.get_integers_result("bonzo")),[10, 20, 30]);
+    }
+
+
+
     const CUSTOM: &str = "
         Custom types need to be given names
         so we accept them as valid:
         --hex (hex)
     ";
-        
-    // they need to be user types that implement FromStr    
+
+    // they need to be user types that implement FromStr
     use std::str::FromStr;
     use std::num::ParseIntError;
-    
+
     struct Hex {
         value: u64
     }
 
     impl FromStr for Hex {
         type Err = ParseIntError;
-        
+
         fn from_str(s: &str) -> ::std::result::Result<Self,Self::Err> {
             let value = u64::from_str_radix(s,16)?;
             Ok(Hex{value: value})
         }
     }
-    
-    
+
+
     #[test]
     fn test_custom() {
         let mut args = Args::new(CUSTOM);

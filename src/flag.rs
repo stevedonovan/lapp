@@ -14,6 +14,8 @@ pub struct Flag {
     pub pos: usize,
     pub help: String,
     pub constraint: Option<Box< Fn(Value) -> Result<Value> >>,
+    pub strings: Vec<String>,
+    pub defstr: String,
 }
 
 
@@ -24,7 +26,20 @@ impl Flag {
         if let Some(ref constraint) = self.constraint {
             v = constraint(v)?;
         }
+        self.strings.push(arg.to_string());
         self.set_value(v)?;
+        Ok(())
+    }
+
+    pub fn set_default_from_string(&mut self, arg: &str, infer: bool) -> Result<()> {
+        self.defstr = arg.into();
+        self.defval = Value::from_value(arg)?;
+        let vtype = self.defval.type_of();
+        if infer { // (default <str>)
+            self.vtype = vtype;
+        } else { // (<type> default <str>)
+            // type has already been set. Is it consistent with deduced type?
+        }
         Ok(())
     }
 
@@ -84,7 +99,7 @@ impl Flag {
         }
         Ok(())
     }
-    
+
     pub fn position(&self) -> Option<usize> {
         if self.pos > 0 {Some(self.pos)} else {None}
     }
@@ -102,6 +117,7 @@ impl Flag {
                 }
             } else {
                 self.value = self.defval.clone();
+                self.strings.push(self.defstr.clone());
             }
         }
         Ok(())
