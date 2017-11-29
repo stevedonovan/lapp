@@ -390,7 +390,12 @@ impl <'a> Args<'a> {
         }
     }
 
-    fn bad_flag <T>(&self, tname: &str, msg: &str, pos: Option<usize>) -> Result<T> {
+    fn bad_flag <T>(&self, tname: &str, msg: &str) -> Result<T> {
+        let pos = if let Ok(ref flag) = self.flags_by_long_ref(tname) {
+            flag.position()
+        } else {
+            None
+        };
         error(&self.error_msg(tname,msg,pos))
     }
 
@@ -405,18 +410,17 @@ impl <'a> Args<'a> {
     // Second, the flag's value was not set. Third, the flag's value was an error.
     fn result_flag_flag (&self, name: &str) -> Result<&Flag> {
         if let Ok(ref flag) = self.flags_by_long_ref(name) {
-           let positional = flag.position();
            if flag.value.is_none() {
-                self.bad_flag(name,"is required",positional)
+                self.bad_flag(name,"is required")
             } else {
                 if let Value::Error(ref s) = flag.value {
-                   self.bad_flag(name,s,positional)
+                   self.bad_flag(name,s)
                 } else {
                     Ok(flag)
                 }
             }
         } else {
-            self.bad_flag(name,"is unknown",None)
+            self.bad_flag(name,"is unknown")
         }
     }
 
@@ -432,11 +436,7 @@ impl <'a> Args<'a> {
             Ok(value) => {
                 match extract(value) {
                     Ok(v) => Ok(v),
-                    Err(e) => {
-                        // was this a positional arg or a flag?
-                        let p = self.flags_by_long_ref(name).unwrap().position();
-                        self.bad_flag(name,e.description(),p)
-                    }
+                    Err(e) => self.bad_flag(name,e.description())
                 }
             },
             Err(e) => Err(e)
@@ -500,7 +500,7 @@ impl <'a> Args<'a> {
     {
         match self.get_text_result(name)?.parse::<T>() {
             Ok(v) => Ok(v),
-            Err(e) => error(e.to_string())
+            Err(e) =>  self.bad_flag(name,&e.to_string())
         }
     }
 
