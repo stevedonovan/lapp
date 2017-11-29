@@ -585,6 +585,21 @@ impl <'a> Args<'a> {
         self.get_array_result(name,"float",|b| b.as_float())
     }
 
+    /// get a multiple flag as an array of any parsable value.
+    pub fn get_results<T>(&self, name: &str) -> Result<Vec<T>>
+    where T: FromStr, <T as FromStr>::Err : Display
+    {
+        let flag = self.result_flag_flag(name)?;
+        flag.strings.iter()
+            .map(|s| s.parse::<T>()) // Result<T,Err>
+            .map(|r| { match r { // but we want Result<T,LappError>
+                Ok(v) => Ok(v),
+                Err(e) => self.bad_flag(name,&e.to_string())
+             }})
+            .collect()
+    }
+
+
     /// get a multiple flag as an array of strings, quitting otherwise
     pub fn get_strings(&self, name: &str) -> Vec<String> {
         self.unwrap(self.get_strings_result(name))
@@ -598,6 +613,13 @@ impl <'a> Args<'a> {
     /// get a multiple flag as an array of floats, quitting otherwise
     pub fn get_floats(&self, name: &str) -> Vec<f32> {
         self.unwrap(self.get_floats_result(name))
+    }
+
+    /// get a multiple flag as an array of any parsable value, quitting otherwise
+    pub fn get_array<T>(&self, name: &str) -> Vec<T>
+    where T: FromStr, <T as FromStr>::Err : Display
+    {
+        self.unwrap(self.get_results(name))
     }
 
 
