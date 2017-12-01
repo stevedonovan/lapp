@@ -63,14 +63,25 @@ pub struct Args<'a> {
     text: &'a str,
     varargs: bool,
     user_types: Vec<String>,
+    istart: usize,
 }
 
 impl <'a> Args<'a> {
     /// provide a _usage string_ from which we extract flag definitions
     pub fn new(text: &'a str) -> Args {
-        Args{flags: Vec::new(), pos: 0, text: text, varargs: false, user_types: Vec::new()}
+        Args{flags: Vec::new(), pos: 0, text: text, varargs: false, user_types: Vec::new(), istart: 1}
     }
 
+    /// start offset in program command-line arguments.
+    /// This defaults to 1, but e.g. for Cargo subcommands
+    /// it would be 2
+    pub fn start(mut self, istart: usize) -> Self {
+        self.istart = istart;
+        self
+    }
+
+    /// declare any user-defined types to be used in the spec.
+    /// (They will need to implement FromStr)
     pub fn user_types(&mut self, types: &[&str]) {
         let v: Vec<String> = types.iter().map(|s| s.to_string()).collect();
         self.user_types = v;
@@ -128,10 +139,19 @@ impl <'a> Args<'a> {
         }
     }
 
+    /// parse the spec and the command-line
+    pub fn parse_result(&mut self) -> Result<()> {
+        self.parse_spec()?;
+        let v: Vec<String> = env::args().skip(self.istart).collect();
+        self.parse_command_line(v)
+    }
+
+
+    /// parse the spec and the command-line, quitting on error.
     pub fn parse(&mut self) {
-        if let Err(e) = self.parse_spec() { self.quit(e.description()); }
-        let v: Vec<String> = env::args().skip(1).collect();
-        if let Err(e) = self.parse_command_line(v) { self.quit(e.description()); }
+        if let Err(e) = self.parse_result() {
+            self.quit(e.description());
+        }
     }
 
     fn parse_spec(&mut self) -> Result<()> {
