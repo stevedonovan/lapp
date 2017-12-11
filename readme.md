@@ -128,9 +128,9 @@ you can specify the type: `args.get::<u8>("flag")`.  It will then be an error to
 integers outside 0..255. Simularly, `args.get_array::<u8>("flag")` will get an
 integer-valued array flag as the desired type.
 
-In fact, any type that implements the [FromStr]() trait will work. In this example,
-we want to let the user enter integer values as hexadecimal. It's necessary to
-specify any user types upfront, because otherwise **lapp** will complain about
+In fact, any type that implements the [FromStr](https://doc.rust-lang.org/1.15.1/std/str/trait.FromStr.html) trait will work.
+In this example, we want to let the user enter integer values as hexadecimal.
+It's necessary to specify any user types upfront, because otherwise **lapp** will complain about
 unrecognized types.
 
 ```rust
