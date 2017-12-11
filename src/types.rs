@@ -228,14 +228,28 @@ impl Value {
     }
 
     // This converts the '(default STR)' specifier into the actual value (and hence type)
-    pub fn from_value (val: &str) -> Result<Value> {
+    pub fn from_value (val: &str, dtype: &Type) -> Result<Value> {
         let firstc = val.chars().next().unwrap();
         if firstc.is_digit(10) {
-            let t = if val.find('.').is_some() { Type::Float } else { Type::Int };
+            let dt;
+            let t = if let Type::None = *dtype {
+                dt = if val.find('.').is_some() { Type::Float } else { Type::Int };
+                &dt
+            } else {
+                dtype
+            };
             t.parse_string(val)
         } else
         if firstc == '\'' { // strip quotes, _definitely_ a string
-            Ok(Value::Str((&val[1..(val.len()-1)]).to_string()))
+            match *dtype {
+                Type::None | Type::Str => {},
+                _ =>
+                    return error(format!("cannot convert default string to {}",dtype.short_name()))
+            }
+            Ok(Value::Str((&val[1..(val.len()-1)]).into()))
+        } else
+        if let Type::Str = *dtype {
+            Ok(Value::Str(val.into()))
         } else
         if val == "stdin" {
             Ok(Value::FileIn("stdin".into()))
@@ -243,7 +257,7 @@ impl Value {
         if val == "stdout" {
             Ok(Value::FileOut("stdout".into()))
         } else {
-            Ok(Value::Str(val.to_string()))
+            Ok(Value::Str(val.into()))
         }
     }
 

@@ -154,9 +154,12 @@ impl <'a> Args<'a> {
         }
     }
 
-    fn parse_spec(&mut self) -> Result<()> {
+    /// parse the spec and create the flags.
+    pub fn parse_spec(&mut self) -> Result<()> {
         for line in self.text.lines() {
-            self.parse_spec_line(line)?;
+            if let Err(e) = self.parse_spec_line(line) {
+                return error(format!("{}\nat line: '{}'",e.description(),line));
+            }
         }
         if let Err(_) = self.flags_by_long("help") {
             self.parse_spec_line("   -h,--help this help").unwrap();
@@ -167,12 +170,12 @@ impl <'a> Args<'a> {
 
     fn parse_spec_line(&mut self, mut slice: &str) -> Result<()> {
         use strutil::*;
+        fn flag_error (flag: &Flag,msg: &str) -> Result<()> {
+            error(format!("{}: flag '{}'",msg,flag.long))
+        }
 
         if let Some(idx) = slice.find(|c: char| ! c.is_whitespace()) {
             let mut flag: Flag = Default::default();
-            let flag_error = |flag: &Flag,msg: &str| {
-                error(format!("{}: flag '{}'",msg,flag.long))
-            };
             let mut is_positional = false;
             slice = &slice[idx..];
             let is_flag = starts_with(&mut slice,"-");
@@ -316,7 +319,7 @@ impl <'a> Args<'a> {
             .next().ok_or(LappError(format!("no arg #{}",pos)))
     }
 
-    fn parse_command_line(&mut self, v: Vec<String>) -> Result<()> {
+    pub fn parse_command_line(&mut self, v: Vec<String>) -> Result<()> {
         use strutil::*;
         let mut iter = v.into_iter();
 
@@ -400,6 +403,13 @@ impl <'a> Args<'a> {
             flag.check()?;
         }
         Ok(())
+    }
+
+    /// clear all the flags - ready to parse a new command line.
+    pub fn clear(&mut self) {
+        for flag in &mut self.flags {
+            flag.clear();
+        }
     }
 
     fn error_msg(&self, tname: &str, msg: &str, pos: Option<usize>) -> String {

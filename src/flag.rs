@@ -33,19 +33,19 @@ impl Flag {
 
     pub fn set_default_from_string(&mut self, arg: &str, infer: bool) -> Result<()> {
         self.defstr = arg.into();
-        self.defval = Value::from_value(arg)?;
-        let vtype = self.defval.type_of();
         if infer { // (default <str>)
-            self.vtype = vtype;
+            self.defval = Value::from_value(arg,&Type::None)?;
+            self.vtype = self.defval.type_of();
         } else { // (<type> default <str>)
-            // type has already been set. Is it consistent with deduced type?
+            // type has already been set - coerce value.
+            self.defval = Value::from_value(arg,&self.vtype)?;
         }
         Ok(())
     }
 
     pub fn set_range_constraint(&mut self, b1: &str, b2: &str) -> Result<()> {
-        let b1 = Value::from_value(b1)?;
-        let b2 = Value::from_value(b2)?;
+        let b1 = Value::from_value(b1,&Type::None)?;
+        let b2 = Value::from_value(b2,&Type::None)?;
         if b1.type_of() != b2.type_of() {
             return error("range values must be same type");
         }
@@ -121,6 +121,12 @@ impl Flag {
             }
         }
         Ok(())
+    }
+
+    pub fn clear(&mut self) {
+        self.is_set = false;
+        self.strings.clear();
+        self.value = Value::None;
     }
 
     pub fn rust_name(&self) -> String {
