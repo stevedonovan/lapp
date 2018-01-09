@@ -5,8 +5,10 @@ use std::fmt;
 use std::result;
 use std::string;
 use std::io;
+use std::env;
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct LappError(pub String);
@@ -25,7 +27,6 @@ impl Error for LappError {
 
 pub type Result<T> = result::Result<T,LappError>;
 
-
 pub fn error<T, M: string::ToString>(msg: M) -> Result<T> {
     Err(LappError(msg.to_string()))
 }
@@ -40,6 +41,7 @@ pub enum Type {
     Bool,
     FileIn,
     FileOut,
+    Path,
     None,
     Arr(Box<Type>),
     Error,
@@ -59,6 +61,7 @@ impl Type {
         "bool" => Ok(Type::Bool),
         "infile" => Ok(Type::FileIn),
         "outfile" => Ok(Type::FileOut),
+        "path" => Ok(Type::Path),
         _ => error(format!("not a known type {}",s))
         }
     }
@@ -132,7 +135,8 @@ impl Type {
                 res.push(Box::new(v));
             }
             Ok(Value::Arr(res))
-          }
+          },
+        Type::Path => Ok(Value::Path(s.into())),
         _ => error(format!("can't convert '{}' to {:?}",s,self))
         }
     }
@@ -148,6 +152,7 @@ pub enum Value {
     Bool(bool),
     FileIn(String),
     FileOut(String),
+    Path(PathBuf),
     None,
     Arr(Vec<Box<Value>>),
     Error(String),
@@ -187,7 +192,7 @@ impl Value {
                     Err(e) => error(format!("can't open '{}' for reading: {}",s, e.description()))
                 }
              },
-              _ => self.type_error("infile")
+             _ => self.type_error("infile")
         }
     }
 
@@ -200,7 +205,15 @@ impl Value {
                     Err(e) => error(format!("can't open '{}' for writing: {}",s, e.description()))
                 }
              },
-              _ => self.type_error("not an outfile")
+             _ => self.type_error("outfile")
+        }
+    }
+
+    pub fn as_path(&self) -> Result<PathBuf> {
+        match *self {
+            Value::Path(ref p) => Ok(p.clone()),
+            _ => self.type_error("path")
+
         }
     }
 
@@ -220,6 +233,7 @@ impl Value {
         Value::Bool(_) => Type::Bool,
         Value::FileIn(_) => Type::FileIn,
         Value::FileOut(_) => Type::FileOut,
+        Value::Path(_) => Type::Path,
         Value::None => Type::None,
         Value::Error(_) => Type::Error,
         // watch out here...
@@ -256,6 +270,14 @@ impl Value {
         } else
         if val == "stdout" {
             Ok(Value::FileOut("stdout".into()))
+        } else
+        if let Type::Path = *dtype {
+            let val = if val.starts_with('~') {
+                env::home_dir().unwrap().join(&val[2..])
+            } else {
+                val.into()
+            };
+            Ok(Value::Path(val))
         } else {
             Ok(Value::Str(val.into()))
         }

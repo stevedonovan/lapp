@@ -49,6 +49,7 @@ use std::io::{Write,Read};
 use std::error::Error;
 use std::str::FromStr;
 use std::fmt::Display;
+use std::path::PathBuf;
 
 mod strutil;
 mod types;
@@ -348,7 +349,7 @@ impl <'a> Args<'a> {
                     parsing = false;
                 } else {
                     let mut rest = extract_flag_value(&mut s);
-                    let mut flag = self.flags_by_long(s)?;
+                    let flag = self.flags_by_long(s)?;
                     if flag.vtype != Type::Bool { // then it needs a value....
                         if rest == "" {  // try grab the next arg
                             rest = nextarg(s,iter.next())?;
@@ -364,7 +365,7 @@ impl <'a> Args<'a> {
                 // although only the last one can take a value
                 let mut chars = s.chars();
                 while let Some(ch) = chars.next() {
-                    let mut flag = self.flags_by_short(ch)?;
+                    let flag = self.flags_by_short(ch)?;
                     if flag.vtype != Type::Bool {
                         let mut rest: String = chars.collect();
                         if rest == "" {
@@ -377,7 +378,7 @@ impl <'a> Args<'a> {
                     }
                 }
             } else {  // positional argument
-                let mut flag = self.flags_by_pos(k)?;
+                let flag = self.flags_by_pos(k)?;
                 flag.set_value_from_string(s)?;
                 // multiple arguments are added to the vector value
                 if ! flag.is_multiple {
@@ -517,6 +518,11 @@ impl <'a> Args<'a> {
         self.result_flag(name,|v| v.as_outfile())
     }
 
+    /// get flag as a path
+    pub fn get_path_result(&self, name: &str) -> Result<PathBuf> {
+        self.result_flag(name,|v| v.as_path())
+    }
+
     /// get flag always as text, if it's defined
     pub fn get_text_result(&self, name: &str) -> Result<&String> {
         self.result_flag_flag(name).map(|f| &f.strings[0])
@@ -562,6 +568,11 @@ impl <'a> Args<'a> {
     /// get flag as a file for writing, quitting otherwise.
     pub fn get_outfile(&self, name: &str) -> Box<Write> {
         self.unwrap(self.get_outfile_result(name))
+    }
+
+    /// get flag as a path, quitting otherwise.
+    pub fn get_path(&self, name: &str) -> PathBuf {
+        self.unwrap(self.get_path_result(name))
     }
 
     /// get flag as any value which can parsed from a string, quitting otherwise.
