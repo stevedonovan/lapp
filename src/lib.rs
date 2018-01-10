@@ -25,10 +25,12 @@
 //! with default `false`. This specifier can be a type (like '(integer)') or a default,
 //! like '(default 10)`. If there's a default, the type is infered from the value - can always
 //! use single quotes to insist that the flag value is a string. Otherwise this flag is
-//! _required_ and must be present!
+//! _required_ and must be present! You can also use a type with default, e.g. "(path default ~/.boo).
 //!
-//! The currently supported types are 'string','integer','bool' and 'float'. There are
-//! corresponding access methods like `get_string("flag")` and so forth.
+//! The currently supported types are 'string','integer','bool','float','infile','outfile' and 'path'.
+//! There are corresponding access methods like `get_string("flag")` and so forth.
+//! Access methods like `get_string_result("flag")` will _not_ exit the program on error
+//! and instead return an error.
 //!
 //! The flag may be followed by '...' (e.g '-I... (<type>)') and it is then a _multiple_
 //! flag; its value will be a vector. This vector may be empty (flag is not required).

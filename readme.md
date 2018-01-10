@@ -74,6 +74,7 @@ supported types are:
   - boolean
   - infile   (`Box<Read>`)  (can have "stdin" as default)
   - outfile  (`Box<Write>`) (can have "stdout" as default)
+  - path (`PathBuf`)  (default will be tilde-expanded)
 
 '(default <val>)' then the type is deduced from the value - either an integer or a
 float if numerical, string otherwise. It is always possible to quote default
@@ -81,7 +82,7 @@ string values in single quotes, which you should do if the default value is not 
 word. When in doubt, quote.
 
 With version 0.3.0, it's also possible to specify both the type and a default,
-e.g. "(integer default 0)".
+e.g. "(integer default 0)" or "(path default ~/.bonzo)".
 
 If there is no default value (except for simple flags) then that flag or argument
 _must_ be specified on the command-line - they are _required_.
@@ -117,6 +118,9 @@ argument is not a file that can be opened for either reading or writing, then
 the program will quit. A default can be specified, so "(default stdin)" will
 wrap up `io.stdin()` for you if the flag is not provided. (This is why we return
 boxed trait objects rather than actual `File` objects - to handle this case.)
+
+By default, the accessor functions exit the program on error. But for every method
+like `args.get_string("flag")` there is an error-returning `args.get_string_result("flag")`.
 
 ## More Code Examples
 
