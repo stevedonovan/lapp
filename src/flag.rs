@@ -16,8 +16,8 @@ pub struct Flag {
     pub constraint: Option<Box< Fn(Value) -> Result<Value> >>,
     pub strings: Vec<String>,
     pub defstr: String,
+    pub overriden: bool,
 }
-
 
 impl Flag {
     pub fn set_value_from_string(&mut self, arg: &str) -> Result<()> {
@@ -86,7 +86,7 @@ impl Flag {
     }
 
     pub fn set_value(&mut self, v: Value) -> Result<()> {
-        if self.is_set && ! self.is_multiple {
+        if ! self.overriden && self.is_set && ! self.is_multiple {
             return error(format!("flag already specified {}",self.long));
         }
         self.is_set = true;
@@ -121,6 +121,11 @@ impl Flag {
             }
         }
         Ok(())
+    }
+
+    pub fn uncheck(&mut self) {
+        self.overriden = true;
+        self.strings.clear();
     }
 
     pub fn clear(&mut self) {

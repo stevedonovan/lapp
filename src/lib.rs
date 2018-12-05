@@ -142,11 +142,15 @@ impl <'a> Args<'a> {
         }
     }
 
+    pub fn parse_env_args(&mut self) -> Result<()> {
+        let v: Vec<String> = env::args().skip(self.istart).collect();
+        self.parse_command_line(v)
+    }
+
     /// parse the spec and the command-line
     pub fn parse_result(&mut self) -> Result<()> {
         self.parse_spec()?;
-        let v: Vec<String> = env::args().skip(self.istart).collect();
-        self.parse_command_line(v)
+        self.parse_env_args()
     }
 
 
@@ -347,7 +351,7 @@ impl <'a> Args<'a> {
         while let Some(arg) = iter.next() {
             let mut s = arg.as_str();
              if parsing && starts_with(&mut s, "--") { // long flag
-                if s.len() == 0 { // plain '--' means 'stop arg processing'
+                if s.is_empty() { // plain '--' means 'stop arg processing'
                     parsing = false;
                 } else {
                     let mut rest = extract_flag_value(&mut s);
@@ -406,6 +410,13 @@ impl <'a> Args<'a> {
             flag.check()?;
         }
         Ok(())
+    }
+
+    /// clear used flag state
+    pub fn clear_used(&mut self) {
+        for flag in &mut self.flags {
+            flag.uncheck();
+        }
     }
 
     /// clear all the flags - ready to parse a new command line.
@@ -676,7 +687,6 @@ pub fn parse_args(s: &str) -> Args {
     res.parse();
     res
 }
-
 
 #[cfg(test)]
 mod tests {
