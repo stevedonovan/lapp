@@ -212,6 +212,8 @@ impl Value {
     pub fn as_path(&self) -> Result<PathBuf> {
         match *self {
             Value::Path(ref p) => Ok(p.clone()),
+            Value::FileIn(ref s) => Ok(s.clone().into()),
+            Value::FileOut(ref s) => Ok(s.clone().into()),
             _ => self.type_error("path")
 
         }

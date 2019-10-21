@@ -119,6 +119,10 @@ the program will quit. A default can be specified, so "(default stdin)" will
 wrap up `io.stdin()` for you if the flag is not provided. (This is why we return
 boxed trait objects rather than actual `File` objects - to handle this case.)
 
+"infile" and "outfile" also act like "path" values and the path given on the
+command line can be retrieved with `.get_path()` or `.get_path_result()` as with any
+other path.
+
 By default, the accessor functions exit the program on error. But for every method
 like `args.get_string("flag")` there is an error-returning `args.get_string_result("flag")`.
 
