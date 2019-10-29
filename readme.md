@@ -190,7 +190,7 @@ This is passed to `lapp-gen` as an environment variable (since we don't want to
 confuse the command-line parameters here)
 
 ```
-~/rust/lapp/examples$ LAPP_FILE='test.lapp vars' lapp-gen
+~/rust/lapp/examples$ LAPP_GEN='test.lapp vars' lapp-gen
     let lines = args.get_integer("lines");
     let verbose = args.get_bool("verbose");
     let file = args.get_string("file");
@@ -204,22 +204,22 @@ is prepended with 'c_'.
 You may test your spec by specifying just the file, and any command-line arguments:
 
 ```
-~/rust/lapp/examples$ LAPP_FILE='test.lapp' lapp-gen
+~/rust/lapp/examples$ LAPP_GEN='test.lapp' lapp-gen
 flag 'lines' value Int(10)
 flag 'verbose' value Bool(false)
 flag 'file' value Error("required flag file")
 flag 'help' value Bool(false)
-~/rust/lapp/examples$ LAPP_FILE='test.lapp' lapp-gen hello -v
+~/rust/lapp/examples$ LAPP_GEN='test.lapp' lapp-gen hello -v
 flag 'lines' value Int(10)
 flag 'verbose' value Bool(true)
 flag 'file' value Str("hello")
 flag 'help' value Bool(false)
-~/rust/lapp/examples$ LAPP_FILE='test.lapp' lapp-gen hello -v --lines 30
+~/rust/lapp/examples$ LAPP_GEN='test.lapp' lapp-gen hello -v --lines 30
 flag 'lines' value Int(30)
 flag 'verbose' value Bool(true)
 flag 'file' value Str("hello")
 flag 'help' value Bool(false)
-~/rust/lapp/examples$ LAPP_FILE='test.lapp' lapp-gen hello -vn 40
+~/rust/lapp/examples$ LAPP_GEN='test.lapp' lapp-gen hello -vn 40
 flag 'lines' value Int(40)
 flag 'verbose' value Bool(true)
 flag 'file' value Str("hello")
@@ -227,14 +227,14 @@ flag 'help' value Bool(false)
 
 ```
 
-The `mony.lapp` test file in `examples` gives all the permutations possible
+The `monty.lapp` test file in `examples` gives all the permutations possible
 with this version of Lapp.
 
 The real labour saving codegen option is to generate a struct which is initialized
 from lapp command-lines:
 
 ```rust
-~/rust/lapp/examples$ LAPP_FILE='test.lapp struct:Args' lapp-gen
+~/rust/lapp/examples$ LAPP_GEN='test.lapp struct:Args' lapp-gen
 ~/rust/lapp/examples$ cat test.lapp.inc
 const USAGE: &'static str = "
 Prints out first n lines of a file
@@ -295,6 +295,4 @@ Generally, however, I feel it's important to get a straightforward set of featur
 even if they are limited.  There are more general options for handling more complicated
 command-line programs (for example, that support commands like 'cargo build' or 'git status')
 and I intend to keep `lapp` as simple as possible, without extra dependencies.
-
-
 
