@@ -36,7 +36,7 @@ enum Mode {
 fn main() {
     // Get the user's instructions for what to do.
     let lapp_file_spec = env::var("LAPP_GEN").unwrap_or_else(|_| {
-        print!("{}", USAGE);
+        eprint!("{}", USAGE);
         ::std::process::exit(1);
     });
     let parts: Vec<_> = lapp_file_spec.split_whitespace().collect();
