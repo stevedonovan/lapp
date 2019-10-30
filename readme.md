@@ -296,3 +296,63 @@ even if they are limited.  There are more general options for handling more comp
 command-line programs (for example, that support commands like 'cargo build' or 'git status')
 and I intend to keep `lapp` as simple as possible, without extra dependencies.
 
+## The Payoff
+
+I'll contrast and compare two little programs; the first uses the popular `structopt` crate:
+
+```rust
+// structopt.rs
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+/// Give the name and the age
+struct Args {
+    #[structopt(short,long)]
+    /// name of person
+    name: String,
+
+    #[structopt(short,long)]
+    /// age of person
+    age_of_person: u16,
+
+}
+
+fn main() {
+    let args = Args::from_args();
+    println!("name {} age {}", args.name, args.age_of_person);
+}
+```
+
+And here's the equivalent `lapp` program:
+
+```rust
+// lapp.rs
+const USAGE: &str = "\
+Give the name and the age
+    -n, --name  (string) name of person
+    -a, --age-of-person (integer) age of person
+";
+
+fn main() {
+    let args = lapp::parse_args(USAGE);
+    let name: String = args.get("name");
+    let age_of_person: u16 = args.get("age-of-person");
+    println!("name {} age {}", name,age_of_person);
+}
+```
+
+It's hard to beat the ergonomic convenience of `structopt` (especially since version 0.3), and the `lapp`
+version does involve more repetition.
+
+Comparing the stripped release builds:
+  - `structopt` is 727K (15+ dependencies)
+  - `lapp` is 359K (1 dependency)
+
+i.e. twice as large and slower to build.
+
+If you are building larger programs with many dependencies, the flexibility of `structopt` wins out,
+(plus people are more fussy about the output of command-line programs these days.)
+
+But for dinky little programs? It's useful to have options.
+
+
