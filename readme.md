@@ -1,3 +1,8 @@
+# lapp
+## simple, slick command line argument parsing for Rust
+[![crates.io version badge](https://img.shields.io/crates/v/lapp)](https://crates.io/crates/lapp/)
+[![docs.rs badge](https://docs.rs/lapp/badge.svg)](https://docs.rs/lapp/)
+
 Command-line parsing is essential for any program that needs to be run by
 other people, and is a messy task with many corner cases: this is one wheel that should not be
 reinvented for a project. It should not to be too ugly to use, either, like
